@@ -682,7 +682,9 @@ hdr_format_str (char *dest,
     
       ch = ' ';
 
-      if (WithCrypto && hdr->security & GOODSIGN)
+      if (hdr->expires && hdr->expires < time(NULL))
+	      ch = 'E';
+      else if (WithCrypto && hdr->security & GOODSIGN)
         ch = 'S';
       else if (WithCrypto && hdr->security & ENCRYPT)
       	ch = 'P';

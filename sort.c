@@ -33,6 +33,7 @@
 
 /* function to use as discriminator when normal sort method is equal */
 static sort_t *AuxSort = NULL;
+static time_t Now;
 
 #define AUXSORT(code,a,b) if (!code && AuxSort && !option(OPTAUXSORT)) { \
   set_option(OPTAUXSORT); \
@@ -240,6 +241,19 @@ int compare_label (const void *a, const void *b)
   return (SORTCODE(result));
 }
 
+static int compare_expires (const void *a, const void *b)
+{
+  HEADER **pa = (HEADER **) a;
+  HEADER **pb = (HEADER **) b;
+  int result = 0;
+  if (!(*pa)->expires && !(*pb)->expires);
+  else if (!(*pa)->expires) result = 1;
+  else if (!(*pb)->expires) result = -1;
+  else result = (*pa)->expires - (*pb)->expires;
+  AUXSORT(result,a,b);
+  return (SORTCODE (result));
+}
+
 static int compare_status (const void *a, const void *b)
 {
   HEADER **pa = (HEADER **) a;
@@ -249,6 +263,7 @@ static int compare_status (const void *a, const void *b)
   if (!result) result = (*pb)->old - (*pa)->old;
   if (!result) result = (*pb)->read - (*pa)->read;
   if (!result) result = (*pa)->flagged - (*pb)->flagged;
+  if (!result) result = ((*pb)->expires && (*pb)->expires < Now) - ((*pa)->expires && (*pa)->expires < Now);
   if (!result) result = (*pb)->replied - (*pa)->replied;
   AUXSORT(result,a,b);
   return (SORTCODE(result));
@@ -278,6 +293,8 @@ sort_t *mutt_get_sort_func (int method)
       return (compare_spam);
     case SORT_LABEL:
       return (compare_label);
+    case SORT_EXPIRES:
+      return (compare_expires);
     case SORT_STATUS:
       return (compare_status);
     default:
@@ -327,6 +344,8 @@ void mutt_sort_headers (CONTEXT *ctx, int init)
 
   if (init && ctx->tree)
     mutt_clear_threads (ctx);
+
+  Now = time(NULL);
 
   if ((Sort & SORT_MASK) == SORT_THREADS)
   {

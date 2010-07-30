@@ -3814,6 +3814,7 @@ const struct mapping_t SortMethods[] = {
   { "score",		SORT_SCORE },
   { "spam",		SORT_SPAM },
   { "label",		SORT_LABEL },
+  { "expiration",	SORT_EXPIRES },
   { "status",		SORT_STATUS },
   { NULL,               0 }
 };
@@ -3835,6 +3836,7 @@ const struct mapping_t SortAuxMethods[] = {
   { "score",		SORT_SCORE },
   { "spam",		SORT_SPAM },
   { "label",		SORT_LABEL },
+  { "expiration",	SORT_EXPIRES },
   { "status",		SORT_STATUS },
   { NULL,               0 }
 };

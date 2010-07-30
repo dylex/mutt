@@ -1066,9 +1066,12 @@ int mutt_parse_rfc822_line (ENVELOPE *e, HEADER *hdr, char *line, char *p, short
     break;
     
     case 'e':
-    if (!ascii_strcasecmp ("xpires", line + 1) &&
-	hdr && mutt_parse_date (p, NULL) < time (NULL))
-      hdr->expired = 1;
+    if (!ascii_strcasecmp ("xpires", line + 1))
+    {
+      mutt_str_replace(&e->expires, p);
+      if (hdr)
+	hdr->expires = mutt_parse_date(p, NULL);
+    }
     break;
     
     case 'f':

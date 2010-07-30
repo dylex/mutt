@@ -566,6 +566,7 @@ static int strict_cmp_envelopes (const ENVELOPE *e1, const ENVELOPE *e2)
   {
     if (mutt_strcmp (e1->message_id, e2->message_id) ||
 	mutt_strcmp (e1->subject, e2->subject) ||
+	mutt_strcmp (e1->expires, e2->expires) ||
 	!strict_cmp_lists (e1->references, e2->references) ||
 	!strict_addrcmp (e1->from, e2->from) ||
 	!strict_addrcmp (e1->sender, e2->sender) ||

@@ -2070,6 +2070,21 @@ int mutt_index_menu (void)
 
 	break;
 
+      case OP_EDIT_EXPIRES:
+
+	CHECK_MSGCOUNT;
+        CHECK_VISIBLE;
+	CHECK_READONLY;
+	CHECK_ACL(MUTT_ACL_WRITE, _("edit expiration"));
+	mutt_edit_expires(tag ? NULL : CURHDR);
+	if (menu->menu == MENU_PAGER)
+	{
+	  op = OP_DISPLAY_MESSAGE;
+	  continue;
+	}
+
+	break;
+
       case OP_FORWARD_MESSAGE:
 
 	CHECK_MSGCOUNT;

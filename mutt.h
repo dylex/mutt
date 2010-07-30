@@ -623,12 +623,14 @@ typedef struct envelope
   char *message_id;
   char *supersedes;
   char *date;
+  char *expires;
   char *x_label;
   BUFFER *spam;
   LIST *references;		/* message references (in reverse order) */
   LIST *in_reply_to;		/* in-reply-to header content */
   LIST *userhdrs;		/* user defined headers */
 
+  unsigned int expires_changed : 1;
   unsigned int irt_changed : 1; /* In-Reply-To changed to link/break threads */
   unsigned int refs_changed : 1; /* References changed to break thread */
 } ENVELOPE;
@@ -749,7 +751,6 @@ typedef struct header
   unsigned int attach_del : 1; 		/* has an attachment marked for deletion */
   unsigned int old : 1;
   unsigned int read : 1;
-  unsigned int expired : 1; 		/* already expired? */
   unsigned int superseded : 1; 		/* got superseded? */
   unsigned int replied : 1;
   unsigned int subject_changed : 1; 	/* used for threading */
@@ -786,6 +787,7 @@ typedef struct header
 
   time_t date_sent;     	/* time when the message was sent (UTC) */
   time_t received;      	/* time when the message was placed in the mailbox */
+  time_t expires;
   LOFF_T offset;          	/* where in the stream does this message begin? */
   int lines;			/* how many lines in the body of this message? */
   int index;			/* the absolute (unsorted) message number */

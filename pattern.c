@@ -941,6 +941,10 @@ pattern_t *mutt_pattern_comp (/* const */ char *s, int flags, BUFFER *err)
 	    return NULL;
 	  }
 	}
+	else if (tmp->op == MUTT_EXPIRED)
+	{
+	  tmp->max = time(NULL);
+	}
 	implicit = 1;
 	break;
       case '(':
@@ -1151,7 +1155,7 @@ mutt_pattern_exec (struct pattern_t *pat, pattern_exec_flag flags, CONTEXT *ctx,
     case MUTT_ALL:
       return (!pat->not);
     case MUTT_EXPIRED:
-      return (pat->not ^ h->expired);
+      return (pat->not ^ (h->expires && h->expires < pat->max));
     case MUTT_SUPERSEDED:
       return (pat->not ^ h->superseded);
     case MUTT_FLAG:

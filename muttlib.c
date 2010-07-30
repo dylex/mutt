@@ -739,6 +739,7 @@ void mutt_free_envelope (ENVELOPE **p)
   FREE (&(*p)->message_id);
   FREE (&(*p)->supersedes);
   FREE (&(*p)->date);
+  FREE (&(*p)->expires);
   FREE (&(*p)->x_label);
 
   mutt_buffer_free (&(*p)->spam);
@@ -768,6 +769,10 @@ void mutt_merge_envelopes(ENVELOPE* base, ENVELOPE** extra)
   MOVE_ELEM(message_id);
   MOVE_ELEM(supersedes);
   MOVE_ELEM(date);
+  if (!base->expires_changed)
+  {
+    MOVE_ELEM(expires);
+  }
   MOVE_ELEM(x_label);
   if (!base->refs_changed)
   {

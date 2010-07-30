@@ -36,7 +36,8 @@
 #define SORT_FLAGGED	17
 #define SORT_PATH	18
 #define SORT_LABEL	19
-#define SORT_STATUS	20
+#define SORT_EXPIRES	20
+#define SORT_STATUS	21
 
 /* Sort and sort_aux are shorts, and are a composite of a
  * constant sort operation number and a set of compounded

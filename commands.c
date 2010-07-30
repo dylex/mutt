@@ -537,9 +537,9 @@ int mutt_select_sort (int reverse)
         * Capital letters must match the order of the characters in the third
         * string.
         */
-			     _("Rev-Sort Date/Frm/Recv/Subj/tO/Thread/Unsort/siZe/sCore/sPam/Label?: ") :
-			     _("Sort Date/Frm/Recv/Subj/tO/Thread/Unsort/siZe/sCore/sPam/Label?: "),
-			     _("dfrsotuzcpl")))
+			     _("Rev-Sort Date/Frm/Recv/Subj/tO/Thread/Unsort/siZe/sCore/sPam/Label/Expire?: ") :
+			     _("Sort Date/Frm/Recv/Subj/tO/Thread/Unsort/siZe/sCore/sPam/Label/Expire?: "),
+			     _("dfrsotuzcple")))
   {
   case -1: /* abort - don't resort */
     return -1;
@@ -586,6 +586,10 @@ int mutt_select_sort (int reverse)
 
   case 11: /* (l)abel */
     Sort = SORT_LABEL;
+    break;
+
+  case 12: /* (e)xpires */
+    Sort = SORT_EXPIRES;
     break;
   }
   if (reverse)
@@ -983,6 +987,66 @@ void mutt_edit_content_type (HEADER *h, BODY *b, FILE *fp)
   }
 }
 
+static void _mutt_set_expires (HEADER *h, const char *exp, time_t expt)
+{
+	if (!h)
+		return;
+	if (!h->env->expires && !exp)
+		return;
+	if (h->env->expires && exp && !mutt_strcmp (h->env->expires, exp))
+		return;
+	if (h->env->expires)
+		FREE(&h->env->expires);
+	h->env->expires = safe_strdup(exp);
+	h->expires = expt;
+	h->changed = h->env->expires_changed = 1;
+}
+
+void mutt_edit_expires (HEADER *h)
+{
+	char buf[LONG_STRING] = "";
+	time_t exp;
+
+	if (h && h->env->expires)
+		strncpy(buf, h->env->expires, LONG_STRING);
+
+	if (mutt_get_field("Expires: ", buf, sizeof(buf), 0))
+		return;
+	
+	if (*buf)
+	{
+		char cmd[LONG_STRING];
+		FILE *out;
+		pid_t pid;
+
+		snprintf(cmd, sizeof(cmd), "date -Rd '%s'", buf);
+		if ((pid = mutt_create_filter(cmd, NULL, &out, NULL)) > 0)
+		{
+			size_t n = fread(buf, 1, sizeof(buf)-1, out);
+			safe_fclose(&out);
+			while (n && (buf[n-1] == '\n' || buf[n-1] == '\r'))
+				n--;
+			buf[n] = 0;
+
+			if (mutt_wait_filter(pid))
+			{
+				mutt_error(_("Invalid date format"));
+				return;
+			}
+		}
+	}
+
+	exp = *buf ? mutt_parse_date(buf, NULL) : 0;
+	if (h)
+		_mutt_set_expires(h, *buf ? buf : 0, exp);
+	else
+	{
+		int i;
+		for (i = 0; i < Context->vcount; i++)
+			if (Context->hdrs[Context->v2r[i]]->tagged)
+				_mutt_set_expires(Context->hdrs[Context->v2r[i]], *buf ? buf : 0, exp);
+	}
+}
 
 static int _mutt_check_traditional_pgp (HEADER *h, int *redraw)
 {

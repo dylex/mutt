@@ -102,6 +102,9 @@ mutt_copy_hdr (FILE *in, FILE *out, LOFF_T off_start, LOFF_T off_end, int flags,
 	    (ascii_strncasecmp ("Content-Length:", buf, 15) == 0 ||
 	     ascii_strncasecmp ("Lines:", buf, 6) == 0))
 	  continue;
+	if ((flags & CH_UPDATE_EXPIRES) &&
+	    ascii_strncasecmp ("Expires:", buf, 8) == 0)
+	  continue;
 	if ((flags & CH_UPDATE_REFS) &&
 	    ascii_strncasecmp ("References:", buf, 11) == 0)
 	  continue;
@@ -211,6 +214,9 @@ mutt_copy_hdr (FILE *in, FILE *out, LOFF_T off_start, LOFF_T off_end, int flags,
 	    (ascii_strncasecmp ("transfer-encoding:", buf + 8, 18) == 0 ||
 	     ascii_strncasecmp ("type:", buf + 8, 5) == 0)) ||
 	   ascii_strncasecmp ("mime-version:", buf, 13) == 0))
+	continue;
+      if ((flags & CH_UPDATE_EXPIRES) &&
+	  ascii_strncasecmp ("Expires:", buf, 8) == 0)
 	continue;
       if ((flags & CH_UPDATE_REFS) &&
 	  ascii_strncasecmp ("References:", buf, 11) == 0)
@@ -351,7 +357,8 @@ mutt_copy_header (FILE *in, HEADER *h, FILE *out, int flags, const char *prefix)
 
   if (h->env)
     flags |= (h->env->irt_changed ? CH_UPDATE_IRT : 0)
-      | (h->env->refs_changed ? CH_UPDATE_REFS : 0);
+      | (h->env->refs_changed ? CH_UPDATE_REFS : 0)
+      | (h->env->expires_changed ? CH_UPDATE_EXPIRES : 0);
   
   if (mutt_copy_hdr (in, out, h->offset, h->content->offset, flags, prefix) == -1)
     return -1;
@@ -425,6 +432,13 @@ mutt_copy_header (FILE *in, HEADER *h, FILE *out, int flags, const char *prefix)
       if (fprintf(out, "X-Label: %s\n", h->env->x_label) !=
 		  10 + strlen(h->env->x_label))
         return -1;
+  }
+
+  if (flags & CH_UPDATE_EXPIRES && h->env->expires)
+  {
+    fputs ("Expires: ", out);
+    fputs (h->env->expires, out);
+    fputc ('\n', out);
   }
 
   if ((flags & CH_NONEWLINE) == 0)
