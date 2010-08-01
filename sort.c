@@ -240,6 +240,20 @@ int compare_label (const void *a, const void *b)
   return (SORTCODE(result));
 }
 
+static int compare_status (const void *a, const void *b)
+{
+  HEADER **pa = (HEADER **) a;
+  HEADER **pb = (HEADER **) b;
+  int result = 0;
+  if (!result) result = (*pb)->deleted - (*pa)->deleted;
+  if (!result) result = (*pb)->old - (*pa)->old;
+  if (!result) result = (*pb)->read - (*pa)->read;
+  if (!result) result = (*pa)->flagged - (*pb)->flagged;
+  if (!result) result = (*pb)->replied - (*pa)->replied;
+  AUXSORT(result,a,b);
+  return (SORTCODE(result));
+}
+
 sort_t *mutt_get_sort_func (int method)
 {
   switch (method & SORT_MASK)
@@ -264,6 +278,8 @@ sort_t *mutt_get_sort_func (int method)
       return (compare_spam);
     case SORT_LABEL:
       return (compare_label);
+    case SORT_STATUS:
+      return (compare_status);
     default:
       return (NULL);
   }
