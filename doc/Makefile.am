@@ -123,10 +123,10 @@ stamp-doc-rc: $(top_srcdir)/init.h makedoc$(EXEEXT) $(srcdir)/Muttrc.head
 	touch stamp-doc-rc
 
 manual.html: $(srcdir)/html.xsl $(srcdir)/mutt.xsl stamp-doc-xml $(srcdir)/mutt.css
-	-xsltproc --nonet -o $@ $(srcdir)/html.xsl manual.xml
+	-xsltproc -o $@ $(srcdir)/html.xsl manual.xml
 
 stamp-doc-chunked: $(srcdir)/chunk.xsl $(srcdir)/mutt.xsl stamp-doc-xml $(srcdir)/mutt.css
-	-xsltproc --nonet $(srcdir)/chunk.xsl manual.xml
+	-xsltproc $(srcdir)/chunk.xsl manual.xml
 	touch stamp-doc-chunked
 
 $(CHUNKED_DOCFILES): stamp-doc-chunked
