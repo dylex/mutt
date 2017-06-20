@@ -3243,6 +3243,11 @@ struct option_t MuttVars[] = {
   ** You may optionally use the ``reverse-'' prefix to specify reverse sorting
   ** order (example: ``\fCset sort_browser=reverse-date\fP'').
   */
+  { "sort_domain",	DT_BOOL, R_INDEX|R_RESORT, OPTSORTDOMAIN, 0 },
+  /*
+  ** .pp
+  ** When sorting by addresses (to or from), sort according to domain and user.
+  */
   { "sort_re",		DT_BOOL, R_INDEX|R_RESORT|R_RESORT_INIT, OPTSORTRE, 1 },
   /*
   ** .pp

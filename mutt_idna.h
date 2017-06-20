@@ -44,6 +44,8 @@
 # endif
 #endif /* HAVE_LIBIDN */
 
+const char *mutt_revaddr_for_sort (ADDRESS *a);
+
 
 #ifdef HAVE_ICONV
 int mutt_addrlist_to_intl (ADDRESS *, char **);

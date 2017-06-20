@@ -108,6 +108,13 @@ const char *mutt_get_name (ADDRESS *a)
   return ("");
 }
 
+static const char *sort_addr (ADDRESS *a)
+{
+  if (option (OPTSORTDOMAIN) && a && a->mailbox)
+    return (mutt_revaddr_for_sort (a));
+  return (mutt_get_name (a));
+}
+
 static int compare_to (const void *a, const void *b)
 {
   HEADER **ppa = (HEADER **) a;
@@ -116,8 +123,8 @@ static int compare_to (const void *a, const void *b)
   const char *fb;
   int result;
 
-  strfcpy (fa, mutt_get_name ((*ppa)->env->to), SHORT_STRING);
-  fb = mutt_get_name ((*ppb)->env->to);
+  strfcpy (fa, sort_addr ((*ppa)->env->to), SHORT_STRING);
+  fb = sort_addr ((*ppb)->env->to);
   result = mutt_strncasecmp (fa, fb, SHORT_STRING);
   AUXSORT(result,a,b);
   return (SORTCODE (result));
@@ -131,8 +138,8 @@ static int compare_from (const void *a, const void *b)
   const char *fb;
   int result;
 
-  strfcpy (fa, mutt_get_name ((*ppa)->env->from), SHORT_STRING);
-  fb = mutt_get_name ((*ppb)->env->from);
+  strfcpy (fa, sort_addr ((*ppa)->env->from), SHORT_STRING);
+  fb = sort_addr ((*ppb)->env->from);
   result = mutt_strncasecmp (fa, fb, SHORT_STRING);
   AUXSORT(result,a,b);
   return (SORTCODE (result));

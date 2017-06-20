@@ -302,6 +302,41 @@ const char *mutt_addr_for_display (ADDRESS *a)
   return buff;
 }
 
+/* convert user@domain.com to com.domain!user for sorting purposes */
+const char *mutt_revaddr_for_sort (ADDRESS *a)
+{
+  static char *buff = NULL;
+  char *tmp = NULL;
+  char *user = NULL;
+  char *domain = NULL;
+  char *p, *q;
+  size_t dl;
+
+  FREE (&buff);
+
+  if (mbox_to_udomain (a->mailbox, &user, &domain) == -1)
+    return a->mailbox;
+  if ((tmp = intl_to_local (user, domain, MI_MAY_BE_IRREVERSIBLE)))
+    mbox_to_udomain (tmp, &user, &domain);
+
+  dl = mutt_strlen(domain);
+  safe_realloc (&buff, dl + mutt_strlen (user) + 2);
+
+  q = buff;
+  while ((p = memrchr(domain, '.', dl))) {
+    memcpy(q, p+1, domain+dl-p-1);
+    q += domain+dl-p-1;
+    dl = p-domain;
+    *q++ = '.';
+  }
+  memcpy(q, domain, dl);
+  q += dl;
+  FREE (&tmp);
+  *q++ = '!';
+  strcpy(q, user);
+  return buff;
+}
+
 /* Convert an ENVELOPE structure */
 
 void mutt_env_to_local (ENVELOPE *e)
