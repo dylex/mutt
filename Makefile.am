@@ -122,8 +122,8 @@ ACLOCAL_AMFLAGS = -I m4
 
 LDADD = $(LIBOBJS) $(INTLLIBS)
 
-flea:	muttbug.sh
-	cp muttbug.sh flea
+flea: $(srcdir)/muttbug
+	cp $(srcdir)/muttbug flea
 	chmod +x flea
 
 smime_keys: $(srcdir)/smime_keys.pl
@@ -187,9 +187,6 @@ pclean:
 
 check-security:
 	(cd $(top_srcdir) && ./check_sec.sh)
-
-commit:
-	@echo "make commit is obsolete; use hg-commit"; false
 
 update-changelog:
 	(cd $(top_srcdir); \

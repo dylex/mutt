@@ -70,6 +70,7 @@
 #define IMAP_CMD_FAIL_OK (1<<0)
 #define IMAP_CMD_PASS    (1<<1)
 #define IMAP_CMD_QUEUE   (1<<2)
+#define IMAP_CMD_POLL    (1<<3)
 
 /* length of "DD-MMM-YYYY HH:MM:SS +ZZzz" (null-terminated) */
 #define IMAP_DATELEN 27
@@ -212,11 +213,14 @@ typedef struct
   char *mailbox;
   unsigned short check_status;
   unsigned char reopen;
-  unsigned int newMailCount;
+  unsigned int newMailCount;   /* Set when EXISTS notifies of new mail */
   IMAP_CACHE cache[IMAP_CACHE_LEN];
   HASH *uid_hash;
   unsigned int uid_validity;
   unsigned int uidnext;
+  HEADER **msn_index;          /* look up headers by (MSN-1) */
+  unsigned int msn_index_size; /* allocation size */
+  unsigned int max_msn;        /* the largest MSN fetched so far */
   body_cache_t *bcache;
 
   /* all folder flags - system flags AND keywords */
@@ -242,10 +246,10 @@ int imap_exec_msgset (IMAP_DATA* idata, const char* pre, const char* post,
 int imap_open_connection (IMAP_DATA* idata);
 void imap_close_connection (IMAP_DATA* idata);
 IMAP_DATA* imap_conn_find (const ACCOUNT* account, int flags);
-int imap_read_literal (FILE* fp, IMAP_DATA* idata, long bytes, progress_t*);
+int imap_read_literal (FILE* fp, IMAP_DATA* idata, unsigned int bytes, progress_t*);
 void imap_expunge_mailbox (IMAP_DATA* idata);
 void imap_logout (IMAP_DATA** idata);
-int imap_sync_message (IMAP_DATA *idata, HEADER *hdr, BUFFER *cmd,
+int imap_sync_message_for_copy (IMAP_DATA *idata, HEADER *hdr, BUFFER *cmd,
   int *err_continue);
 int imap_has_flag (LIST* flag_list, const char* flag);
 
@@ -264,7 +268,7 @@ int imap_cmd_idle (IMAP_DATA* idata);
 /* message.c */
 void imap_add_keywords (char* s, HEADER* keywords, LIST* mailbox_flags, size_t slen);
 void imap_free_header_data (IMAP_HEADER_DATA** data);
-int imap_read_headers (IMAP_DATA* idata, int msgbegin, int msgend);
+int imap_read_headers (IMAP_DATA* idata, unsigned int msn_begin, unsigned int msn_end);
 char* imap_set_flags (IMAP_DATA* idata, HEADER* h, char* s);
 int imap_cache_del (IMAP_DATA* idata, HEADER* h);
 int imap_cache_clean (IMAP_DATA* idata);
@@ -290,7 +294,7 @@ char* imap_fix_path (IMAP_DATA* idata, const char* mailbox, char* path,
   size_t plen);
 void imap_cachepath(IMAP_DATA* idata, const char* mailbox, char* dest,
                     size_t dlen);
-int imap_get_literal_count (const char* buf, long* bytes);
+int imap_get_literal_count (const char* buf, unsigned int* bytes);
 char* imap_get_qualifier (char* buf);
 int imap_mxcmp (const char* mx1, const char* mx2);
 char* imap_next_word (char* s);

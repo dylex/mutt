@@ -268,7 +268,7 @@ static int eat_regexp (pattern_t *pat, BUFFER *s, BUFFER *err)
   }
   if (!*buf.data)
   {
-    snprintf (err->data, err->dsize, _("Empty expression"));
+    snprintf (err->data, err->dsize, "%s", _("Empty expression"));
     return (-1);
   }
 
@@ -588,7 +588,7 @@ static int eat_date (pattern_t *pat, BUFFER *s, BUFFER *err)
   }
   if (!*buffer.data)
   {
-    snprintf (err->data, err->dsize, _("Empty expression"));
+    snprintf (err->data, err->dsize, "%s", _("Empty expression"));
     return (-1);
   }
 
@@ -784,6 +784,7 @@ pattern_t *mutt_pattern_comp (/* const */ char *s, int flags, BUFFER *err)
   int or = 0;
   int implicit = 1;	/* used to detect logical AND operator */
   int isalias = 0;
+  short thread_op;
   const struct pattern_flags *entry;
   char *p;
   char *buf;
@@ -846,9 +847,18 @@ pattern_t *mutt_pattern_comp (/* const */ char *s, int flags, BUFFER *err)
 	  mutt_pattern_free (&curlist);
 	  return NULL;
 	}
+        thread_op = 0;
 	if (*(ps.dptr + 1) == '(')
+          thread_op = MUTT_THREAD;
+        else if ((*(ps.dptr + 1) == '<') && (*(ps.dptr + 2) == '('))
+          thread_op = MUTT_PARENT;
+        else if ((*(ps.dptr + 1) == '>') && (*(ps.dptr + 2) == '('))
+          thread_op = MUTT_CHILDREN;
+        if (thread_op)
         {
-	  ps.dptr ++; /* skip ~ */
+	  ps.dptr++; /* skip ~ */
+          if (thread_op == MUTT_PARENT || thread_op == MUTT_CHILDREN)
+            ps.dptr++;
 	  p = find_matching_paren (ps.dptr + 1);
 	  if (*p != ')')
 	  {
@@ -857,7 +867,7 @@ pattern_t *mutt_pattern_comp (/* const */ char *s, int flags, BUFFER *err)
 	    return NULL;
 	  }
 	  tmp = new_pattern ();
-	  tmp->op = MUTT_THREAD;
+	  tmp->op = thread_op;
 	  if (last)
 	    last->next = tmp;
 	  else
@@ -931,7 +941,7 @@ pattern_t *mutt_pattern_comp (/* const */ char *s, int flags, BUFFER *err)
 	{
 	  if (!*ps.dptr)
 	  {
-	    snprintf (err->data, err->dsize, _("missing parameter"));
+	    snprintf (err->data, err->dsize, "%s", _("missing parameter"));
 	    mutt_pattern_free (&curlist);
 	    return NULL;
 	  }
@@ -1112,6 +1122,26 @@ static int match_threadcomplete(struct pattern_t *pat, pattern_exec_flag flags, 
   return 0;
 }
 
+static int match_threadparent(struct pattern_t *pat, pattern_exec_flag flags, CONTEXT *ctx, THREAD *t)
+{
+  if (!t || !t->parent || !t->parent->message)
+    return 0;
+
+  return mutt_pattern_exec(pat, flags, ctx, t->parent->message, NULL);
+}
+
+static int match_threadchildren(struct pattern_t *pat, pattern_exec_flag flags, CONTEXT *ctx, THREAD *t)
+{
+  if (!t || !t->child)
+    return 0;
+
+  for (t = t->child; t; t = t->next)
+    if (t->message && mutt_pattern_exec(pat, flags, ctx, t->message, NULL))
+      return 1;
+
+  return 0;
+}
+
 
 /* Sets a value in the pattern_cache_t cache entry.
  * Normalizes the "true" value to 2. */
@@ -1152,6 +1182,10 @@ mutt_pattern_exec (struct pattern_t *pat, pattern_exec_flag flags, CONTEXT *ctx,
       return (pat->not ^ (perform_or (pat->child, flags, ctx, h, cache) > 0));
     case MUTT_THREAD:
       return (pat->not ^ match_threadcomplete(pat->child, flags, ctx, h->thread, 1, 1, 1, 1));
+    case MUTT_PARENT:
+      return (pat->not ^ match_threadparent(pat->child, flags, ctx, h->thread));
+    case MUTT_CHILDREN:
+      return (pat->not ^ match_threadchildren(pat->child, flags, ctx, h->thread));
     case MUTT_ALL:
       return (!pat->not);
     case MUTT_EXPIRED:
@@ -1384,10 +1418,10 @@ void mutt_check_simple (char *s, size_t len, const char *simple)
 
 int mutt_pattern_func (int op, char *prompt)
 {
-  pattern_t *pat;
-  char buf[LONG_STRING] = "", *simple;
+  pattern_t *pat = NULL;
+  char buf[LONG_STRING] = "", *simple = NULL;
   BUFFER err;
-  int i;
+  int i, rv = -1;
   progress_t progress;
 
   strfcpy (buf, NONULL (Context->pattern), sizeof (buf));
@@ -1404,15 +1438,13 @@ int mutt_pattern_func (int op, char *prompt)
   err.data = safe_malloc(err.dsize);
   if ((pat = mutt_pattern_comp (buf, MUTT_FULL_MSG, &err)) == NULL)
   {
-    FREE (&simple);
     mutt_error ("%s", err.data);
-    FREE (&err.data);
-    return (-1);
+    goto bail;
   }
 
 #ifdef USE_IMAP
   if (Context->magic == MUTT_IMAP && imap_search (Context, pat) < 0)
-    return -1;
+    goto bail;
 #endif
 
   mutt_progress_init (&progress, _("Executing command on matching messages..."),
@@ -1494,11 +1526,15 @@ int mutt_pattern_func (int op, char *prompt)
       Context->limit_pattern = mutt_pattern_comp (buf, MUTT_FULL_MSG, &err);
     }
   }
+
+  rv = 0;
+
+bail:
   FREE (&simple);
   mutt_pattern_free (&pat);
   FREE (&err.data);
 
-  return 0;
+  return rv;
 }
 
 int mutt_search_command (int cur, int op)
@@ -1547,6 +1583,7 @@ int mutt_search_command (int cur, int op)
 	LastSearch[0] = '\0';
 	return (-1);
       }
+      FREE (&err.data);
       mutt_clear_error ();
     }
   }

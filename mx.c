@@ -499,7 +499,7 @@ int mx_access (const char* path, int flags)
 {
 #ifdef USE_IMAP
   if (mx_is_imap (path))
-    return imap_access (path, flags);
+    return imap_access (path);
 #endif
 
   return access (path, flags);
@@ -1054,7 +1054,7 @@ void mx_update_tables(CONTEXT *ctx, int committing)
       if (committing)
 	ctx->hdrs[j]->changed = 0;
       else if (ctx->hdrs[j]->changed)
-	ctx->changed++;
+	ctx->changed = 1;
       
       if (!committing || (ctx->magic == MUTT_MAILDIR && option (OPTMAILDIRTRASH)))
       {

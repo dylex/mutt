@@ -165,6 +165,7 @@ static HEADER *select_msg (void)
   menu->title = _("Postponed Messages");
   menu->data = PostContext;
   menu->help = mutt_compile_help (helpstr, sizeof (helpstr), MENU_POST, PostponeHelp);
+  mutt_push_current_menu (menu);
 
   /* The postponed mailbox is setup to have sorting disabled, but the global
    * Sort variable may indicate something different.   Sorting has to be
@@ -188,13 +189,13 @@ static HEADER *select_msg (void)
 	  if (menu->current >= menu->top + menu->pagelen)
 	  {
 	    menu->top = menu->current;
-	    menu->redraw = REDRAW_INDEX | REDRAW_STATUS;
+	    menu->redraw |= REDRAW_INDEX | REDRAW_STATUS;
 	  }
 	  else
 	    menu->redraw |= REDRAW_MOTION_RESYNCH;
 	}
 	else
-	  menu->redraw = REDRAW_CURRENT;
+	  menu->redraw |= REDRAW_CURRENT;
 	break;
 
       case OP_GENERIC_SELECT_ENTRY:
@@ -209,6 +210,7 @@ static HEADER *select_msg (void)
   }
 
   Sort = orig_sort;
+  mutt_pop_current_menu (menu);
   mutt_menuDestroy (&menu);
   return (r > -1 ? PostContext->hdrs[r] : NULL);
 }
@@ -590,18 +592,14 @@ int mutt_prepare_template (FILE *fp, CONTEXT *ctx, HEADER *newhdr, HEADER *hdr,
   {
     newhdr->security |= sec_type;
     if (!crypt_valid_passphrase (sec_type))
-      goto err;
+      goto bail;
 
     mutt_message _("Decrypting message...");
     if ((crypt_pgp_decrypt_mime (fp, &bfp, newhdr->content, &b) == -1)
 	|| b == NULL)
     {
- err:
-      mx_close_message (ctx, &msg);
-      mutt_free_envelope (&newhdr->env);
-      mutt_free_body (&newhdr->content);
       mutt_error _("Decryption failed.");
-      return -1;
+      goto bail;
     }
 
     mutt_free_body (&newhdr->content);
@@ -690,7 +688,18 @@ int mutt_prepare_template (FILE *fp, CONTEXT *ctx, HEADER *newhdr, HEADER *hdr,
     if ((WithCrypto & APPLICATION_PGP) &&
 	((sec_type = mutt_is_application_pgp (b)) & (ENCRYPT|SIGN)))
     {
-      mutt_body_handler (b, &s);
+      if (sec_type & ENCRYPT)
+      {
+        if (!crypt_valid_passphrase (APPLICATION_PGP))
+          goto bail;
+        mutt_message _("Decrypting message...");
+      }
+
+      if (mutt_body_handler (b, &s) < 0)
+      {
+        mutt_error _("Decryption failed.");
+        goto bail;
+      }
 
       newhdr->security |= sec_type;
 
@@ -701,7 +710,19 @@ int mutt_prepare_template (FILE *fp, CONTEXT *ctx, HEADER *newhdr, HEADER *hdr,
     else if ((WithCrypto & APPLICATION_SMIME) &&
              ((sec_type = mutt_is_application_smime (b)) & (ENCRYPT|SIGN)))
     {
-      mutt_body_handler (b, &s);
+      if (sec_type & ENCRYPT)
+      {
+        if (!crypt_valid_passphrase (APPLICATION_SMIME))
+          goto bail;
+        crypt_smime_getkeys (newhdr->env);
+        mutt_message _("Decrypting message...");
+      }
+
+      if (mutt_body_handler (b, &s) < 0)
+      {
+        mutt_error _("Decryption failed.");
+        goto bail;
+      }
 
       newhdr->security |= sec_type;
       b->type = TYPETEXT;
