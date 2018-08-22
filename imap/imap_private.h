@@ -269,7 +269,7 @@ int imap_cmd_idle (IMAP_DATA* idata);
 void imap_add_keywords (char* s, HEADER* keywords, LIST* mailbox_flags, size_t slen);
 void imap_free_header_data (IMAP_HEADER_DATA** data);
 int imap_read_headers (IMAP_DATA* idata, unsigned int msn_begin, unsigned int msn_end);
-char* imap_set_flags (IMAP_DATA* idata, HEADER* h, char* s);
+char* imap_set_flags (IMAP_DATA* idata, HEADER* h, char* s, int *server_changes);
 int imap_cache_del (IMAP_DATA* idata, HEADER* h);
 int imap_cache_clean (IMAP_DATA* idata);
 
@@ -301,7 +301,8 @@ char* imap_next_word (char* s);
 time_t imap_parse_date (char* s);
 void imap_make_date (char* buf, time_t timestamp);
 void imap_qualify_path (char *dest, size_t len, IMAP_MBOX *mx, char* path);
-void imap_quote_string (char* dest, size_t slen, const char* src);
+void imap_quote_string (char* dest, size_t dlen, const char* src);
+void imap_quote_string_and_backquotes (char *dest, size_t dlen, const char *src);
 void imap_unquote_string (char* s);
 void imap_munge_mbox_name (IMAP_DATA *idata, char *dest, size_t dlen, const char *src);
 void imap_unmunge_mbox_name (IMAP_DATA *idata, char *s);

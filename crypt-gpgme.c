@@ -703,10 +703,15 @@ static gpgme_key_t *create_recipient_set (const char *keylist,
 /* Make sure that the correct signer is set. Returns 0 on success. */
 static int set_signer (gpgme_ctx_t ctx, int for_smime)
 {
-  char *signid = for_smime ? SmimeDefaultKey: PgpSignAs;
+  char *signid;
   gpgme_error_t err;
   gpgme_ctx_t listctx;
   gpgme_key_t key, key2;
+
+  if (for_smime)
+    signid = (SmimeSignAs && *SmimeSignAs) ? SmimeSignAs : SmimeDefaultKey;
+  else
+    signid = (PgpSignAs && *PgpSignAs) ? PgpSignAs : PgpDefaultKey;
 
   if (!signid || !*signid)
     return 0;
@@ -1377,8 +1382,12 @@ static void print_smime_keyinfo (const char* msg, gpgme_signature_t sig,
   }
   else
   {
-    state_puts (_("KeyID "), s);
-    state_puts (sig->fpr, s);
+    if (sig->fpr == NULL)
+      state_puts (_("no signature fingerprint available"), s);
+    else {
+      state_puts (_("KeyID "), s);
+      state_puts (sig->fpr, s);
+    }
     state_puts ("\n", s);
   }
 
@@ -4843,8 +4852,8 @@ static int gpgme_send_menu (HEADER *msg, int is_smime)
       {
         snprintf (input_signas, sizeof (input_signas), "0x%s",
             crypt_fpr_or_lkeyid (p));
-        mutt_str_replace (is_smime? &SmimeDefaultKey : &PgpSignAs, input_signas);
-        crypt_free_key (&p); 
+        mutt_str_replace (is_smime? &SmimeSignAs : &PgpSignAs, input_signas);
+        crypt_free_key (&p);
 
         msg->security |= SIGN;
       }
@@ -4992,7 +5001,7 @@ int smime_gpgme_verify_sender (HEADER *h)
 
 void mutt_gpgme_set_sender (const char *sender)
 {
-  mutt_error ("[setting sender] mailbox: %s\n", sender);
+  dprint (2, (debugfile, "mutt_gpgme_set_sender: setting to: %s\n", sender));
   FREE (&current_sender);
   current_sender = safe_strdup (sender);
 }

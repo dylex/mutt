@@ -653,7 +653,7 @@ int imap_fetch_message (CONTEXT *ctx, MESSAGE *msg, int msgno)
 	 * incrementally update flags later, this won't stop us syncing */
 	else if ((ascii_strncasecmp ("FLAGS", pc, 5) == 0) && !h->changed)
 	{
-	  if ((pc = imap_set_flags (idata, h, pc)) == NULL)
+	  if ((pc = imap_set_flags (idata, h, pc, NULL)) == NULL)
 	    goto bail;
 	}
       }
@@ -1184,18 +1184,54 @@ void imap_free_header_data (IMAP_HEADER_DATA** data)
   }
 }
 
+/* Sets server_changes to 1 if a change to a flag is made, or in the
+ * case of local_changes, if a change to a flag _would_ have been
+ * made. */
+static void imap_set_changed_flag (CONTEXT *ctx, HEADER *h, int local_changes,
+                                   int *server_changes, int flag_name, int old_hd_flag,
+                                   int new_hd_flag, int h_flag)
+{
+  /* If there are local_changes, we only want to note if the server
+   * flags have changed, so we can set a reopen flag in
+   * cmd_parse_fetch().  We don't want to count a local modification
+   * to the header flag as a "change".
+   */
+  if ((old_hd_flag != new_hd_flag) || (!local_changes))
+  {
+    if (new_hd_flag != h_flag)
+    {
+      if (server_changes)
+        *server_changes = 1;
+
+      /* Local changes have priority */
+      if (!local_changes)
+        mutt_set_flag (ctx, h, flag_name, new_hd_flag);
+    }
+  }
+}
+
 /* imap_set_flags: fill out the message header according to the flags from
- *   the server. Expects a flags line of the form "FLAGS (flag flag ...)" */
-char* imap_set_flags (IMAP_DATA* idata, HEADER* h, char* s)
+ * the server. Expects a flags line of the form "FLAGS (flag flag ...)"
+ *
+ * Sets server_changes to 1 if a change to a flag is made, or in the
+ * case of h->changed, if a change to a flag _would_ have been
+ * made. */
+char* imap_set_flags (IMAP_DATA* idata, HEADER* h, char* s, int *server_changes)
 {
   CONTEXT* ctx = idata->ctx;
   IMAP_HEADER newh;
+  IMAP_HEADER_DATA old_hd;
   IMAP_HEADER_DATA* hd;
   unsigned char readonly;
+  int local_changes;
+
+  local_changes = h->changed;
 
   memset (&newh, 0, sizeof (newh));
   hd = h->data;
   newh.data = hd;
+
+  memcpy (&old_hd, hd, sizeof(old_hd));
 
   dprint (2, (debugfile, "imap_set_flags: parsing FLAGS\n"));
   if ((s = msg_parse_flags (&newh, s)) == NULL)
@@ -1208,16 +1244,24 @@ char* imap_set_flags (IMAP_DATA* idata, HEADER* h, char* s)
   readonly = ctx->readonly;
   ctx->readonly = 0;
 
-  mutt_set_flag (ctx, h, MUTT_NEW, !(hd->read || hd->old));
-  mutt_set_flag (ctx, h, MUTT_OLD, hd->old);
-  mutt_set_flag (ctx, h, MUTT_READ, hd->read);
-  mutt_set_flag (ctx, h, MUTT_DELETE, hd->deleted);
-  mutt_set_flag (ctx, h, MUTT_FLAG, hd->flagged);
-  mutt_set_flag (ctx, h, MUTT_REPLIED, hd->replied);
+  /* This is redundant with the following two checks. Removing:
+   * mutt_set_flag (ctx, h, MUTT_NEW, !(hd->read || hd->old));
+   */
+  imap_set_changed_flag (ctx, h, local_changes, server_changes,
+                         MUTT_OLD, old_hd.old, hd->old, h->old);
+  imap_set_changed_flag (ctx, h, local_changes, server_changes,
+                         MUTT_READ, old_hd.read, hd->read, h->read);
+  imap_set_changed_flag (ctx, h, local_changes, server_changes,
+                         MUTT_DELETE, old_hd.deleted, hd->deleted, h->deleted);
+  imap_set_changed_flag (ctx, h, local_changes, server_changes,
+                         MUTT_FLAG, old_hd.flagged, hd->flagged, h->flagged);
+  imap_set_changed_flag (ctx, h, local_changes, server_changes,
+                         MUTT_REPLIED, old_hd.replied, hd->replied, h->replied);
 
   /* this message is now definitively *not* changed (mutt_set_flag
    * marks things changed as a side-effect) */
-  h->changed = 0;
+  if (!local_changes)
+    h->changed = 0;
   ctx->changed &= ~readonly;
   ctx->readonly = readonly;
 
@@ -1301,6 +1345,7 @@ static int msg_parse_fetch (IMAP_HEADER *h, char *s)
 {
   char tmp[SHORT_STRING];
   char *ptmp;
+  size_t dlen;
 
   if (!s)
     return -1;
@@ -1334,8 +1379,12 @@ static int msg_parse_fetch (IMAP_HEADER *h, char *s)
       }
       s++;
       ptmp = tmp;
-      while (*s && *s != '\"')
+      dlen = sizeof(tmp) - 1;
+      while (*s && *s != '\"' && dlen)
+      {
         *ptmp++ = *s++;
+        dlen--;
+      }
       if (*s != '\"')
         return -1;
       s++; /* skip past the trailing " */
@@ -1347,8 +1396,12 @@ static int msg_parse_fetch (IMAP_HEADER *h, char *s)
       s += 11;
       SKIPWS (s);
       ptmp = tmp;
-      while (isdigit ((unsigned char) *s))
+      dlen = sizeof(tmp) - 1;
+      while (isdigit ((unsigned char) *s) && dlen)
+      {
         *ptmp++ = *s++;
+        dlen--;
+      }
       *ptmp = 0;
       if (mutt_atol (tmp, &h->content_length) < 0)
         return -1;

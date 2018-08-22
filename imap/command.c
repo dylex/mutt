@@ -334,7 +334,21 @@ int imap_cmd_idle (IMAP_DATA* idata)
 {
   int rc;
 
-  imap_cmd_start (idata, "IDLE");
+  if (cmd_start (idata, "IDLE", IMAP_CMD_POLL) < 0)
+  {
+    cmd_handle_fatal (idata);
+    return -1;
+  }
+
+  if ((ImapPollTimeout > 0) &&
+      (mutt_socket_poll (idata->conn, ImapPollTimeout)) == 0)
+  {
+    mutt_error (_("Connection to %s timed out"), idata->conn->account.host);
+    mutt_sleep (2);
+    cmd_handle_fatal (idata);
+    return -1;
+  }
+
   do
     rc = imap_cmd_step (idata);
   while (rc == IMAP_CMD_CONTINUE);
@@ -466,7 +480,8 @@ static void cmd_handle_fatal (IMAP_DATA* idata)
   {
     mx_fastclose_mailbox (idata->ctx);
     mutt_socket_close (idata->conn);
-    mutt_error (_("Mailbox closed"));
+    mutt_error (_("Mailbox %s@%s closed"),
+	idata->conn->account.login, idata->conn->account.host);
     mutt_sleep (1);
     idata->state = IMAP_DISCONNECTED;
   }
@@ -571,7 +586,7 @@ static int cmd_handle_untagged (IMAP_DATA* idata)
     dprint (2, (debugfile, "Handling untagged NO\n"));
 
     /* Display the warning message from the server */
-    mutt_error ("%s", s+3);
+    mutt_error ("%s", s+2);
     mutt_sleep (2);
   }
 
@@ -653,6 +668,7 @@ static void cmd_parse_fetch (IMAP_DATA* idata, char* s)
 {
   unsigned int msn, uid;
   HEADER *h;
+  int server_changes = 0;
 
   dprint (3, (debugfile, "Handling FETCH\n"));
 
@@ -688,13 +704,14 @@ static void cmd_parse_fetch (IMAP_DATA* idata, char* s)
 
     if (ascii_strncasecmp ("FLAGS", s, 5) == 0)
     {
-      /* If server flags could conflict with mutt's flags, reopen the mailbox. */
-      if (h->changed)
-        idata->reopen |= IMAP_EXPUNGE_PENDING;
-      else
+      imap_set_flags (idata, h, s, &server_changes);
+      if (server_changes)
       {
-        imap_set_flags (idata, h, s);
-        idata->check_status = IMAP_FLAGS_PENDING;
+        /* If server flags could conflict with mutt's flags, reopen the mailbox. */
+        if (h->changed)
+          idata->reopen |= IMAP_EXPUNGE_PENDING;
+        else
+          idata->check_status = IMAP_FLAGS_PENDING;
       }
       return;
     }
@@ -825,13 +842,14 @@ static void cmd_parse_lsub (IMAP_DATA* idata, char* s)
 
   strfcpy (buf, "mailboxes \"", sizeof (buf));
   mutt_account_tourl (&idata->conn->account, &url);
-  /* escape \ and " */
-  imap_quote_string(errstr, sizeof (errstr), list.name);
+  /* escape \ and ". Also escape ` because the resulting
+   * string will be passed to mutt_parse_rc_line. */
+  imap_quote_string_and_backquotes (errstr, sizeof (errstr), list.name);
   url.path = errstr + 1;
   url.path[strlen(url.path) - 1] = '\0';
   if (!mutt_strcmp (url.user, ImapUser))
     url.user = NULL;
-  url_ciss_tostring (&url, buf + 11, sizeof (buf) - 10, 0);
+  url_ciss_tostring (&url, buf + 11, sizeof (buf) - 11, 0);
   safe_strcat (buf, sizeof (buf), "\"");
   mutt_buffer_init (&token);
   mutt_buffer_init (&err);
@@ -951,6 +969,13 @@ static void cmd_parse_status (IMAP_DATA* idata, char* s)
       idata->status = IMAP_FATAL;
       return;
     }
+
+    if (strlen(idata->buf) < litlen)
+    {
+      dprint (1, (debugfile, "Error parsing STATUS mailbox\n"));
+      return;
+    }
+
     mailbox = idata->buf;
     s = mailbox + litlen;
     *s = '\0';

@@ -909,6 +909,10 @@ void mutt_pretty_size (char *s, size_t len, LOFF_T n)
 {
   if (n == 0)
     strfcpy (s, "0K", len);
+  /* Change in format released in 1.10.0, but reverted after feedback:
+   * if (n < 1000)
+   *  snprintf (s, len, "%d", (int)n);
+   */
   else if (n < 10189) /* 0.1K - 9.9K */
     snprintf (s, len, "%3.1fK", (n < 103) ? 0.1 : n / 1024.0);
   else if (n < 1023949) /* 10K - 999K */
@@ -1945,6 +1949,16 @@ void mutt_set_mtime (const char* from, const char* to)
     utim.modtime = st.st_mtime;
     utime (to, &utim);
   }
+}
+
+/* set atime to current time, just as read() would do on !noatime.
+ * Silently ignored if unsupported. */
+void mutt_touch_atime (int f)
+{
+#ifdef HAVE_FUTIMENS
+  struct timespec times[2]={{0,UTIME_NOW},{0,UTIME_OMIT}};
+  futimens(f, times);
+#endif
 }
 
 const char *mutt_make_version (void)

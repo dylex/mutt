@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 1996-1998,2012 Michael R. Elkins <me@mutt.org>
  * Copyright (C) 1996-1999 Brandon Long <blong@fiction.net>
- * Copyright (C) 1999-2009,2012 Brendan Cully <brendan@kublai.com>
+ * Copyright (C) 1999-2009,2012,2017 Brendan Cully <brendan@kublai.com>
  *
  *     This program is free software; you can redistribute it and/or modify
  *     it under the terms of the GNU General Public License as published by
@@ -1930,6 +1930,7 @@ int imap_subscribe (char *path, int subscribe)
   char buf[LONG_STRING];
   char mbox[LONG_STRING];
   char errstr[STRING];
+  int mblen;
   BUFFER err, token;
   IMAP_MBOX mx;
 
@@ -1951,8 +1952,10 @@ int imap_subscribe (char *path, int subscribe)
     mutt_buffer_init (&err);
     err.data = errstr;
     err.dsize = sizeof (errstr);
-    snprintf (mbox, sizeof (mbox), "%smailboxes \"%s\"",
-              subscribe ? "" : "un", path);
+    mblen = snprintf (mbox, sizeof (mbox), "%smailboxes ",
+                      subscribe ? "" : "un");
+    imap_quote_string_and_backquotes (mbox + mblen, sizeof(mbox) - mblen,
+                                      path);
     if (mutt_parse_rc_line (mbox, &token, &err))
       dprint (1, (debugfile, "Error adding subscribed mailbox: %s\n", errstr));
     FREE (&token.data);
