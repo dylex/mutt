@@ -68,7 +68,7 @@ void mutt_set_charset (char *charset)
     Charset_is_utf8 = 1;
 #ifndef HAVE_WC_FUNCS
   else if (!ascii_strcasecmp(buffer, "euc-jp") || !ascii_strcasecmp(buffer, "shift_jis")
-  	|| !ascii_strcasecmp(buffer, "cp932") || !ascii_strcasecmp(buffer, "eucJP-ms"))
+           || !ascii_strcasecmp(buffer, "cp932") || !ascii_strcasecmp(buffer, "eucJP-ms"))
   {
     charset_is_ja = 1;
 
@@ -549,8 +549,7 @@ int mutt_filter_unprintable (char **s)
   char *p = *s;
   mbstate_t mbstate1, mbstate2;
 
-  if (!(b = mutt_buffer_new ()))
-    return -1;
+  b = mutt_buffer_new ();
   memset (&mbstate1, 0, sizeof (mbstate1));
   memset (&mbstate2, 0, sizeof (mbstate2));
   for (; (k = mbrtowc (&wc, p, MB_LEN_MAX, &mbstate1)); p += k)
@@ -575,4 +574,3 @@ int mutt_filter_unprintable (char **s)
   FREE (&b);
   return 0;
 }
-

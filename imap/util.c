@@ -45,12 +45,11 @@
 
 /* imap_expand_path: IMAP implementation of mutt_expand_path. Rewrite
  *   an IMAP path in canonical and absolute form.
- * Inputs: a buffer containing an IMAP path, and the number of bytes in
- *   that buffer.
+ * Inputs: a buffer containing an IMAP path.
  * Outputs: The buffer is rewritten in place with the canonical IMAP path.
- * Returns 0 on success, or -1 if imap_parse_path chokes or url_ciss_tostring
+ * Returns 0 on success, or -1 if imap_parse_path chokes or url_ciss_tobuffer
  *   fails, which it might if there isn't enough room in the buffer. */
-int imap_expand_path (char* path, size_t len)
+int imap_expand_path (BUFFER* path)
 {
   IMAP_MBOX mx;
   IMAP_DATA* idata;
@@ -58,7 +57,7 @@ int imap_expand_path (char* path, size_t len)
   char fixedpath[LONG_STRING];
   int rc;
 
-  if (imap_parse_path (path, &mx) < 0)
+  if (imap_parse_path (mutt_b2s (path), &mx) < 0)
     return -1;
 
   idata = imap_conn_find (&mx.account, MUTT_IMAP_CONN_NONEW);
@@ -66,13 +65,71 @@ int imap_expand_path (char* path, size_t len)
   imap_fix_path (idata, mx.mbox, fixedpath, sizeof (fixedpath));
   url.path = fixedpath;
 
-  rc = url_ciss_tostring (&url, path, len, U_DECODE_PASSWD);
+  rc = url_ciss_tobuffer (&url, path, U_DECODE_PASSWD);
   FREE (&mx.mbox);
 
   return rc;
 }
 
 #ifdef USE_HCACHE
+
+/* Generates a seqseq of the UIDs in msn_index to persist in the header cache.
+ *
+ * Empty spots are stored as 0.
+ */
+static void imap_msn_index_to_uid_seqset (BUFFER *b, IMAP_DATA *idata)
+{
+  int first = 1, state = 0, match = 0;
+  HEADER *cur_header;
+  unsigned int msn, cur_uid = 0, last_uid = 0;
+  unsigned int range_begin = 0, range_end = 0;
+
+  for (msn = 1; msn <= idata->max_msn + 1; msn++)
+  {
+    match = 0;
+    if (msn <= idata->max_msn)
+    {
+      cur_header = idata->msn_index[msn - 1];
+      cur_uid = cur_header ? HEADER_DATA(cur_header)->uid : 0;
+      if (!state || (cur_uid && (cur_uid - 1 == last_uid)))
+        match = 1;
+      last_uid = cur_uid;
+    }
+
+    if (match)
+    {
+      switch (state)
+      {
+        case 1:            /* single: convert to a range */
+          state = 2;
+          /* fall through */
+        case 2:            /* extend range ending */
+          range_end = cur_uid;
+          break;
+        default:
+          state = 1;
+          range_begin = cur_uid;
+          break;
+      }
+    }
+    else if (state)
+    {
+      if (first)
+        first = 0;
+      else
+        mutt_buffer_addch (b, ',');
+
+      if (state == 1)
+        mutt_buffer_add_printf (b, "%u", range_begin);
+      else if (state == 2)
+        mutt_buffer_add_printf (b, "%u:%u", range_begin, range_end);
+
+      state = 1;
+      range_begin = cur_uid;
+    }
+  }
+}
+
 static int imap_hcache_namer (const char* path, char* dest, size_t dlen)
 {
   return snprintf (dest, dlen, "%s.hcache", path);
@@ -165,6 +222,51 @@ int imap_hcache_del (IMAP_DATA* idata, unsigned int uid)
   sprintf (key, "/%u", uid);
   return mutt_hcache_delete (idata->hcache, key, imap_hcache_keylen);
 }
+
+int imap_hcache_store_uid_seqset (IMAP_DATA *idata)
+{
+  BUFFER *b;
+  int rc;
+
+  if (!idata->hcache)
+    return -1;
+
+  b = mutt_buffer_new ();
+  /* The seqset is likely large.  Preallocate to reduce reallocs */
+  mutt_buffer_increase_size (b, HUGE_STRING);
+  imap_msn_index_to_uid_seqset (b, idata);
+
+  rc = mutt_hcache_store_raw (idata->hcache, "/UIDSEQSET",
+                              b->data, mutt_buffer_len (b) + 1,
+                              imap_hcache_keylen);
+  dprint (5, (debugfile, "Stored /UIDSEQSET %s\n", b->data));
+  mutt_buffer_free (&b);
+  return rc;
+}
+
+int imap_hcache_clear_uid_seqset (IMAP_DATA *idata)
+{
+  if (!idata->hcache)
+    return -1;
+
+  return mutt_hcache_delete (idata->hcache, "/UIDSEQSET", imap_hcache_keylen);
+}
+
+char *imap_hcache_get_uid_seqset (IMAP_DATA *idata)
+{
+  char *hc_seqset, *seqset;
+
+  if (!idata->hcache)
+    return NULL;
+
+  hc_seqset = mutt_hcache_fetch_raw (idata->hcache, "/UIDSEQSET",
+                                     imap_hcache_keylen);
+  seqset = safe_strdup (hc_seqset);
+  mutt_hcache_free ((void **)&hc_seqset);
+  dprint (5, (debugfile, "Retrieved /UIDSEQSET %s\n", NONULL (seqset)));
+
+  return seqset;
+}
 #endif
 
 /* imap_parse_path: given an IMAP mailbox name, return host, port
@@ -250,7 +352,8 @@ int imap_parse_path (const char* path, IMAP_MBOX* mx)
       return -1;
     }
 
-    if (n > 1) {
+    if (n > 1)
+    {
       if (sscanf (tmp, ":%hu%127s", &(mx->account.port), tmp) >= 1)
 	mx->account.flags |= MUTT_ACCT_PORT;
       if (sscanf (tmp, "/%s", tmp) == 1)
@@ -302,7 +405,7 @@ int imap_mxcmp (const char* mx1, const char* mx2)
 
 /* imap_pretty_mailbox: called by mutt_pretty_mailbox to make IMAP paths
  *   look nice. */
-void imap_pretty_mailbox (char* path)
+void imap_pretty_mailbox (char* path, size_t pathlen)
 {
   IMAP_MBOX home, target;
   ciss_url_t url;
@@ -333,7 +436,8 @@ void imap_pretty_mailbox (char* path)
   }
 
   /* do the '=' substitution */
-  if (home_match) {
+  if (home_match)
+  {
     *path++ = '=';
     /* copy remaining path, skipping delimiter */
     if (! hlen)
@@ -345,10 +449,7 @@ void imap_pretty_mailbox (char* path)
   {
     mutt_account_tourl (&target.account, &url);
     url.path = target.mbox;
-    /* FIXME: That hard-coded constant is bogus. But we need the actual
-     *   size of the buffer from mutt_pretty_mailbox. And these pretty
-     *   operations usually shrink the result. Still... */
-    url_ciss_tostring (&url, path, 1024, 0);
+    url_ciss_tostring (&url, path, pathlen, 0);
   }
 
   FREE (&target.mbox);
@@ -371,24 +472,14 @@ void imap_error (const char *where, const char *msg)
   mutt_sleep (2);
 }
 
-/* imap_new_idata: Allocate and initialise a new IMAP_DATA structure.
- *   Returns NULL on failure (no mem) */
+/* imap_new_idata: Allocate and initialise a new IMAP_DATA structure. */
 IMAP_DATA* imap_new_idata (void)
 {
   IMAP_DATA* idata = safe_calloc (1, sizeof (IMAP_DATA));
 
-  if (!idata)
-    return NULL;
-
-  if (!(idata->cmdbuf = mutt_buffer_new ()))
-    FREE (&idata);
-
+  idata->cmdbuf = mutt_buffer_new ();
   idata->cmdslots = ImapPipelineDepth + 2;
-  if (!(idata->cmds = safe_calloc(idata->cmdslots, sizeof(*idata->cmds))))
-  {
-    mutt_buffer_free(&idata->cmdbuf);
-    FREE (&idata);
-  }
+  idata->cmds = safe_calloc (idata->cmdslots, sizeof(*idata->cmds));
 
   return idata;
 }
@@ -418,7 +509,7 @@ void imap_free_idata (IMAP_DATA** idata)
  * Moreover, IMAP servers may dislike the path ending with the delimiter.
  */
 char *imap_fix_path (IMAP_DATA *idata, const char *mailbox, char *path,
-    size_t plen)
+                     size_t plen)
 {
   int i = 0;
   char delim = '\0';
@@ -521,8 +612,10 @@ char *imap_next_word (char *s)
 {
   int quoted = 0;
 
-  while (*s) {
-    if (*s == '\\') {
+  while (*s)
+  {
+    if (*s == '\\')
+    {
       s++;
       if (*s)
 	s++;
@@ -597,9 +690,9 @@ void imap_make_date (char *buf, time_t timestamp)
   tz /= 60;
 
   snprintf (buf, IMAP_DATELEN, "%02d-%s-%d %02d:%02d:%02d %+03d%02d",
-      tm->tm_mday, Months[tm->tm_mon], tm->tm_year + 1900,
-      tm->tm_hour, tm->tm_min, tm->tm_sec,
-      (int) tz / 60, (int) abs ((int) tz) % 60);
+            tm->tm_mday, Months[tm->tm_mon], tm->tm_year + 1900,
+            tm->tm_hour, tm->tm_min, tm->tm_sec,
+            (int) tz / 60, (int) abs ((int) tz) % 60);
 }
 
 /* imap_qualify_path: make an absolute IMAP folder target, given IMAP_MBOX
@@ -746,7 +839,7 @@ int imap_wordcasecmp(const char *a, const char *b)
   int i;
 
   tmp[SHORT_STRING-1] = 0;
-  for(i=0;i < SHORT_STRING-2;i++,s++)
+  for (i=0;i < SHORT_STRING-2;i++,s++)
   {
     if (!*s || ISSPACE(*s))
     {
@@ -880,4 +973,92 @@ int imap_account_match (const ACCOUNT* a1, const ACCOUNT* a2)
   const ACCOUNT* a2_canon = a2_idata == NULL ? a2 : &a2_idata->conn->account;
 
   return mutt_account_match (a1_canon, a2_canon);
+}
+
+/* Sequence set iteration */
+
+SEQSET_ITERATOR *mutt_seqset_iterator_new (const char *seqset)
+{
+  SEQSET_ITERATOR *iter;
+
+  if (!seqset || !*seqset)
+    return NULL;
+
+  iter = safe_calloc (1, sizeof(SEQSET_ITERATOR));
+  iter->full_seqset = safe_strdup (seqset);
+  iter->eostr = strchr (iter->full_seqset, '\0');
+  iter->substr_cur = iter->substr_end = iter->full_seqset;
+
+  return iter;
+}
+
+/* Returns: 0 when the next sequence is generated
+ *          1 when the iterator is finished
+ *         -1 on error
+ */
+int mutt_seqset_iterator_next (SEQSET_ITERATOR *iter, unsigned int *next)
+{
+  char *range_sep;
+
+  if (!iter || !next)
+    return -1;
+
+  if (iter->in_range)
+  {
+    if ((iter->down && iter->range_cur == (iter->range_end - 1)) ||
+        (!iter->down && iter->range_cur == (iter->range_end + 1)))
+      iter->in_range = 0;
+  }
+
+  if (!iter->in_range)
+  {
+    iter->substr_cur = iter->substr_end;
+    if (iter->substr_cur == iter->eostr)
+      return 1;
+
+    while (!*(iter->substr_cur))
+      iter->substr_cur++;
+    iter->substr_end = strchr (iter->substr_cur, ',');
+    if (!iter->substr_end)
+      iter->substr_end = iter->eostr;
+    else
+      *(iter->substr_end) = '\0';
+
+    range_sep = strchr (iter->substr_cur, ':');
+    if (range_sep)
+      *range_sep++ = '\0';
+
+    if (mutt_atoui (iter->substr_cur, &iter->range_cur))
+      return -1;
+    if (range_sep)
+    {
+      if (mutt_atoui (range_sep, &iter->range_end))
+        return -1;
+    }
+    else
+      iter->range_end = iter->range_cur;
+
+    iter->down = (iter->range_end < iter->range_cur);
+    iter->in_range = 1;
+  }
+
+  *next = iter->range_cur;
+  if (iter->down)
+    iter->range_cur--;
+  else
+    iter->range_cur++;
+
+  return 0;
+}
+
+void mutt_seqset_iterator_free (SEQSET_ITERATOR **p_iter)
+{
+  SEQSET_ITERATOR *iter;
+
+  if (!p_iter || !*p_iter)
+    return;
+
+  iter = *p_iter;
+  FREE (&iter->full_seqset);
+  FREE (p_iter);               /* __FREE_CHECKED__ */
 }

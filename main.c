@@ -2,21 +2,21 @@
  * Copyright (C) 1996-2007,2010,2013 Michael R. Elkins <me@mutt.org>
  * Copyright (C) 1999-2007 Thomas Roessler <roessler@does-not-exist.org>
  * Copyright (C) 2004 g10 Code GmbH
- * 
+ *
  *     This program is free software; you can redistribute it and/or modify
  *     it under the terms of the GNU General Public License as published by
  *     the Free Software Foundation; either version 2 of the License, or
  *     (at your option) any later version.
- * 
+ *
  *     This program is distributed in the hope that it will be useful,
  *     but WITHOUT ANY WARRANTY; without even the implied warranty of
  *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *     GNU General Public License for more details.
- * 
+ *
  *     You should have received a copy of the GNU General Public License
  *     along with this program; if not, write to the Free Software
  *     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
- */ 
+ */
 
 #define MAIN_C 1
 
@@ -45,6 +45,10 @@
 
 #ifdef USE_HCACHE
 #include "hcache.h"
+#endif
+
+#ifdef USE_INOTIFY
+#include "monitor.h"
 #endif
 
 #include <string.h>
@@ -85,7 +89,7 @@ Copyright (C) 1999-2017 Brendan Cully <brendan@kublai.com>\n\
 Copyright (C) 1999-2002 Tommi Komulainen <Tommi.Komulainen@iki.fi>\n\
 Copyright (C) 2000-2004 Edmund Grimley Evans <edmundo@rano.org>\n\
 Copyright (C) 2006-2009 Rocco Rutte <pdmef@gmx.net>\n\
-Copyright (C) 2014-2018 Kevin J. McCarthy <kevin@8t8.us>\n";
+Copyright (C) 2014-2019 Kevin J. McCarthy <kevin@8t8.us>\n";
 
 static const char *Thanks = N_("\
 Many others not mentioned here contributed code, fixes,\n\
@@ -150,7 +154,7 @@ options:\n\
   -m <type>\tspecify a default mailbox type\n\
   -n\t\tcauses Mutt not to read the system Muttrc\n\
   -p\t\trecall a postponed message");
-  
+
   puts _("\
   -Q <variable>\tquery a configuration variable\n\
   -R\t\topen mailbox in read-only mode\n\
@@ -214,7 +218,7 @@ static void show_version (void)
 #endif
 
 #ifdef HAVE_LIBIDN
-  printf ("\nlibidn: %s (compiled with %s)", stringprep_check_version (NULL), 
+  printf ("\nlibidn: %s (compiled with %s)", stringprep_check_version (NULL),
 	  STRINGPREP_VERSION);
 #endif
 
@@ -250,278 +254,286 @@ static void show_version (void)
 #else
   puts ("-DEBUG");
 #endif
-  
 
-  
+
+
   puts (
 
 #ifdef HOMESPOOL
-	"+HOMESPOOL  "
+    "+HOMESPOOL  "
 #else
-	"-HOMESPOOL  "
+    "-HOMESPOOL  "
 #endif
 
 #ifdef USE_SETGID
-	"+USE_SETGID  "
+    "+USE_SETGID  "
 #else
-	"-USE_SETGID  "
+    "-USE_SETGID  "
 #endif
 
 #ifdef USE_DOTLOCK
-	"+USE_DOTLOCK  "
+    "+USE_DOTLOCK  "
 #else
-	"-USE_DOTLOCK  "
+    "-USE_DOTLOCK  "
 #endif
 
 #ifdef DL_STANDALONE
-	"+DL_STANDALONE  "
+    "+DL_STANDALONE  "
 #else
-	"-DL_STANDALONE  "
+    "-DL_STANDALONE  "
 #endif
 
 #ifdef USE_FCNTL
-	"+USE_FCNTL  "
+    "+USE_FCNTL  "
 #else
-	"-USE_FCNTL  "
+    "-USE_FCNTL  "
 #endif
 
 #ifdef USE_FLOCK
-	"+USE_FLOCK   "
+    "+USE_FLOCK   "
 #else
-	"-USE_FLOCK   "
+    "-USE_FLOCK   "
 #endif
     );
   puts (
 #ifdef USE_POP
-	"+USE_POP  "
+    "+USE_POP  "
 #else
-	"-USE_POP  "
+    "-USE_POP  "
 #endif
 
 #ifdef USE_IMAP
-        "+USE_IMAP  "
+    "+USE_IMAP  "
 #else
-        "-USE_IMAP  "
+    "-USE_IMAP  "
 #endif
 
 #ifdef USE_SMTP
-	"+USE_SMTP  "
+    "+USE_SMTP  "
 #else
-	"-USE_SMTP  "
+    "-USE_SMTP  "
 #endif
-	"\n"
-	
+    "\n"
+
 #ifdef USE_SSL_OPENSSL
-	"+USE_SSL_OPENSSL  "
+    "+USE_SSL_OPENSSL  "
 #else
-	"-USE_SSL_OPENSSL  "
+    "-USE_SSL_OPENSSL  "
 #endif
 
 #ifdef USE_SSL_GNUTLS
-	"+USE_SSL_GNUTLS  "
+    "+USE_SSL_GNUTLS  "
 #else
-	"-USE_SSL_GNUTLS  "
+    "-USE_SSL_GNUTLS  "
 #endif
 
 #ifdef USE_SASL
-	"+USE_SASL  "
+    "+USE_SASL  "
 #else
-	"-USE_SASL  "
+    "-USE_SASL  "
 #endif
 #ifdef USE_GSS
-	"+USE_GSS  "
+    "+USE_GSS  "
 #else
-	"-USE_GSS  "
+    "-USE_GSS  "
 #endif
 
 #if HAVE_GETADDRINFO
-	"+HAVE_GETADDRINFO  "
+    "+HAVE_GETADDRINFO  "
 #else
-	"-HAVE_GETADDRINFO  "
+    "-HAVE_GETADDRINFO  "
 #endif
-        );
-  	
+    );
+
   puts (
 #ifdef HAVE_REGCOMP
-	"+HAVE_REGCOMP  "
+    "+HAVE_REGCOMP  "
 #else
-	"-HAVE_REGCOMP  "
+    "-HAVE_REGCOMP  "
 #endif
 
 #ifdef USE_GNU_REGEX
-	"+USE_GNU_REGEX  "
+    "+USE_GNU_REGEX  "
 #else
-	"-USE_GNU_REGEX  "
+    "-USE_GNU_REGEX  "
 #endif
 
-	"\n"
-	
+    "\n"
+
 #ifdef HAVE_COLOR
-	"+HAVE_COLOR  "
+    "+HAVE_COLOR  "
 #else
-	"-HAVE_COLOR  "
-#endif
-	
-#ifdef HAVE_START_COLOR
-	"+HAVE_START_COLOR  "
-#else
-	"-HAVE_START_COLOR  "
-#endif
-	
-#ifdef HAVE_TYPEAHEAD
-	"+HAVE_TYPEAHEAD  "
-#else
-	"-HAVE_TYPEAHEAD  "
-#endif
-	
-#ifdef HAVE_BKGDSET
-	"+HAVE_BKGDSET  "
-#else
-	"-HAVE_BKGDSET  "
+    "-HAVE_COLOR  "
 #endif
 
-	"\n"
-	
+#ifdef HAVE_START_COLOR
+    "+HAVE_START_COLOR  "
+#else
+    "-HAVE_START_COLOR  "
+#endif
+
+#ifdef HAVE_TYPEAHEAD
+    "+HAVE_TYPEAHEAD  "
+#else
+    "-HAVE_TYPEAHEAD  "
+#endif
+
+#ifdef HAVE_BKGDSET
+    "+HAVE_BKGDSET  "
+#else
+    "-HAVE_BKGDSET  "
+#endif
+
+    "\n"
+
 #ifdef HAVE_CURS_SET
-	"+HAVE_CURS_SET  "
+    "+HAVE_CURS_SET  "
 #else
-	"-HAVE_CURS_SET  "
+    "-HAVE_CURS_SET  "
 #endif
-	
+
 #ifdef HAVE_META
-	"+HAVE_META  "
+    "+HAVE_META  "
 #else
-	"-HAVE_META  "
+    "-HAVE_META  "
 #endif
-	
+
 #ifdef HAVE_RESIZETERM
-	"+HAVE_RESIZETERM  "
+    "+HAVE_RESIZETERM  "
 #else
-	"-HAVE_RESIZETERM  "
+    "-HAVE_RESIZETERM  "
 #endif
-	
+
 #ifdef HAVE_FUTIMENS
-	"+HAVE_FUTIMENS  "
+    "+HAVE_FUTIMENS  "
 #else
-	"-HAVE_FUTIMENS  "
+    "-HAVE_FUTIMENS  "
 #endif
-        );	
-  
+    );
+
   puts (
 #ifdef CRYPT_BACKEND_CLASSIC_PGP
-        "+CRYPT_BACKEND_CLASSIC_PGP  "
+    "+CRYPT_BACKEND_CLASSIC_PGP  "
 #else
-        "-CRYPT_BACKEND_CLASSIC_PGP  "
+    "-CRYPT_BACKEND_CLASSIC_PGP  "
 #endif
 #ifdef CRYPT_BACKEND_CLASSIC_SMIME
-        "+CRYPT_BACKEND_CLASSIC_SMIME  "
+    "+CRYPT_BACKEND_CLASSIC_SMIME  "
 #else
-        "-CRYPT_BACKEND_CLASSIC_SMIME  "
+    "-CRYPT_BACKEND_CLASSIC_SMIME  "
 #endif
 #ifdef CRYPT_BACKEND_GPGME
-        "+CRYPT_BACKEND_GPGME  "
+    "+CRYPT_BACKEND_GPGME  "
 #else
-        "-CRYPT_BACKEND_GPGME  "
+    "-CRYPT_BACKEND_GPGME  "
 #endif
-        );
-  
+    );
+
   puts (
 #ifdef EXACT_ADDRESS
-	"+EXACT_ADDRESS  "
+    "+EXACT_ADDRESS  "
 #else
-	"-EXACT_ADDRESS  "
+    "-EXACT_ADDRESS  "
 #endif
 
 #ifdef SUN_ATTACHMENT
-	"+SUN_ATTACHMENT  "
+    "+SUN_ATTACHMENT  "
 #else
-	"-SUN_ATTACHMENT  "
+    "-SUN_ATTACHMENT  "
 #endif
 
-	"\n"
-	
+    "\n"
+
 #ifdef ENABLE_NLS
-	"+ENABLE_NLS  "
+    "+ENABLE_NLS  "
 #else
-	"-ENABLE_NLS  "
+    "-ENABLE_NLS  "
 #endif
 
 #ifdef LOCALES_HACK
-	"+LOCALES_HACK  "
+    "+LOCALES_HACK  "
 #else
-	"-LOCALES_HACK  "
-#endif
-	      
-#ifdef HAVE_WC_FUNCS
-	"+HAVE_WC_FUNCS  "
-#else
-	"-HAVE_WC_FUNCS  "
-#endif
-	
-#ifdef HAVE_LANGINFO_CODESET
-	"+HAVE_LANGINFO_CODESET  "
-#else
-	"-HAVE_LANGINFO_CODESET  "
+    "-LOCALES_HACK  "
 #endif
 
-	
-#ifdef HAVE_LANGINFO_YESEXPR
- 	"+HAVE_LANGINFO_YESEXPR  "
+#ifdef HAVE_WC_FUNCS
+    "+HAVE_WC_FUNCS  "
 #else
- 	"-HAVE_LANGINFO_YESEXPR  "
+    "-HAVE_WC_FUNCS  "
 #endif
-	
-	"\n"
+
+#ifdef HAVE_LANGINFO_CODESET
+    "+HAVE_LANGINFO_CODESET  "
+#else
+    "-HAVE_LANGINFO_CODESET  "
+#endif
+
+
+#ifdef HAVE_LANGINFO_YESEXPR
+    "+HAVE_LANGINFO_YESEXPR  "
+#else
+    "-HAVE_LANGINFO_YESEXPR  "
+#endif
+
+    "\n"
 
 #if HAVE_ICONV
-	"+HAVE_ICONV  "
+    "+HAVE_ICONV  "
 #else
-	"-HAVE_ICONV  "
+    "-HAVE_ICONV  "
 #endif
 
 #if ICONV_NONTRANS
-	"+ICONV_NONTRANS  "
+    "+ICONV_NONTRANS  "
 #else
-	"-ICONV_NONTRANS  "
+    "-ICONV_NONTRANS  "
 #endif
 
 #if HAVE_LIBIDN
-	"+HAVE_LIBIDN  "
+    "+HAVE_LIBIDN  "
 #else
-	"-HAVE_LIBIDN  "
+    "-HAVE_LIBIDN  "
 #endif
 
 #if HAVE_LIBIDN2
-	"+HAVE_LIBIDN2  "
+    "+HAVE_LIBIDN2  "
 #else
-	"-HAVE_LIBIDN2  "
+    "-HAVE_LIBIDN2  "
 #endif
 
 #if HAVE_GETSID
-	"+HAVE_GETSID  "
+    "+HAVE_GETSID  "
 #else
-	"-HAVE_GETSID  "
+    "-HAVE_GETSID  "
 #endif
 
 #if USE_HCACHE
-	"+USE_HCACHE  "
+    "+USE_HCACHE  "
 #else
-	"-USE_HCACHE  "
+    "-USE_HCACHE  "
 #endif
 
+    "\n"
+
 #ifdef USE_SIDEBAR
-	"+USE_SIDEBAR  "
+    "+USE_SIDEBAR  "
 #else
-	"-USE_SIDEBAR  "
+    "-USE_SIDEBAR  "
 #endif
 
 #ifdef USE_COMPRESSED
-	"+USE_COMPRESSED  "
+    "+USE_COMPRESSED  "
 #else
-	"-USE_COMPRESSED  "
+    "-USE_COMPRESSED  "
 #endif
 
-	);
+#ifdef USE_INOTIFY
+    "+USE_INOTIFY  "
+#else
+    "-USE_INOTIFY  "
+#endif
+
+    );
 
 #ifdef ISPELL
   printf ("ISPELL=\"%s\"\n", ISPELL);
@@ -545,7 +557,7 @@ static void show_version (void)
   puts(_(ReachingUs));
 
   mutt_print_patchlist();
-  
+
   exit (0);
 }
 
@@ -584,7 +596,7 @@ static void start_curses (void)
 #if HAVE_META
   meta (stdscr, TRUE);
 #endif
-init_extended_keys();
+  init_extended_keys();
   mutt_reflow_windows ();
 }
 
@@ -596,7 +608,7 @@ init_extended_keys();
 
 int main (int argc, char **argv, char **environ)
 {
-  char folder[_POSIX_PATH_MAX] = "";
+  BUFFER *folder = NULL;
   char *subject = NULL;
   char *includeFile = NULL;
   char *draftFile = NULL;
@@ -616,10 +628,12 @@ int main (int argc, char **argv, char **environ)
   extern char *optarg;
   extern int optind;
   int double_dash = argc, nargc = 1;
+  int exit_code = 1;
+  const char *exit_endwin_msg = NULL;
 
   /* sanity check against stupid administrators */
-  
-  if(getegid() != getgid())
+
+  if (getegid() != getgid())
   {
     fprintf(stderr, "%s: I don't want to run with privileges!\n",
 	    argv[0]);
@@ -662,7 +676,7 @@ int main (int argc, char **argv, char **environ)
   for (optind = 1; optind < double_dash; )
   {
     /* We're getopt'ing POSIXLY, so we'll be here every time getopt()
-     * encounters a non-option.  That could be a file to attach 
+     * encounters a non-option.  That could be a file to attach
      * (all non-options between -a and --) or it could be an address
      * (which gets collapsed to the front of argv).
      */
@@ -685,114 +699,116 @@ int main (int argc, char **argv, char **environ)
     if ((i = getopt (argc, argv, "+A:a:b:F:f:c:Dd:Ee:H:s:i:hm:npQ:RvxyzZ")) != EOF)
       switch (i)
       {
-      case 'A':
-        alias_queries = mutt_add_list (alias_queries, optarg);
-        break;
-      case 'a':
-	attach = mutt_add_list (attach, optarg);
-	break;
+        case 'A':
+          alias_queries = mutt_add_list (alias_queries, optarg);
+          break;
+        case 'a':
+          attach = mutt_add_list (attach, optarg);
+          break;
 
-      case 'F':
-	mutt_str_replace (&Muttrc, optarg);
-	break;
+        case 'F':
+          mutt_str_replace (&Muttrc, optarg);
+          break;
 
-      case 'f':
-	strfcpy (folder, optarg, sizeof (folder));
-        explicit_folder = 1;
-	break;
+        case 'f':
+          if (!folder)
+            folder = mutt_buffer_new ();
+          mutt_buffer_strcpy (folder, optarg);
+          explicit_folder = 1;
+          break;
 
-      case 'b':
-      case 'c':
-	if (!msg)
-	  msg = mutt_new_header ();
-	if (!msg->env)
-	  msg->env = mutt_new_envelope ();
-	if (i == 'b')
-	  msg->env->bcc = rfc822_parse_adrlist (msg->env->bcc, optarg);
-	else
-	  msg->env->cc = rfc822_parse_adrlist (msg->env->cc, optarg);
-	break;
+        case 'b':
+        case 'c':
+          if (!msg)
+            msg = mutt_new_header ();
+          if (!msg->env)
+            msg->env = mutt_new_envelope ();
+          if (i == 'b')
+            msg->env->bcc = rfc822_parse_adrlist (msg->env->bcc, optarg);
+          else
+            msg->env->cc = rfc822_parse_adrlist (msg->env->cc, optarg);
+          break;
 
-      case 'D':
-	dump_variables = 1;
-	break;
+        case 'D':
+          dump_variables = 1;
+          break;
 
-      case 'd':
+        case 'd':
 #ifdef DEBUG
-	if (mutt_atoi (optarg, &debuglevel) < 0 || debuglevel <= 0)
-	{
-	  fprintf (stderr, _("Error: value '%s' is invalid for -d.\n"), optarg);
-	  return 1;
-	}
-	printf (_("Debugging at level %d.\n"), debuglevel);
+          if (mutt_atoi (optarg, &debuglevel) < 0 || debuglevel <= 0)
+          {
+            fprintf (stderr, _("Error: value '%s' is invalid for -d.\n"), optarg);
+            return 1;
+          }
+          printf (_("Debugging at level %d.\n"), debuglevel);
 #else
-	printf ("%s", _("DEBUG was not defined during compilation.  Ignored.\n"));
+          printf ("%s", _("DEBUG was not defined during compilation.  Ignored.\n"));
 #endif
-	break;
+          break;
 
-      case 'E':
-        edit_infile = 1;
-        break;
+        case 'E':
+          edit_infile = 1;
+          break;
 
-      case 'e':
-	commands = mutt_add_list (commands, optarg);
-	break;
+        case 'e':
+          commands = mutt_add_list (commands, optarg);
+          break;
 
-      case 'H':
-	draftFile = optarg;
-	break;
+        case 'H':
+          draftFile = optarg;
+          break;
 
-      case 'i':
-	includeFile = optarg;
-	break;
+        case 'i':
+          includeFile = optarg;
+          break;
 
-      case 'm':
-	/* should take precedence over .muttrc setting, so save it for later */
-	newMagic = optarg; 
-	break;
+        case 'm':
+          /* should take precedence over .muttrc setting, so save it for later */
+          newMagic = optarg;
+          break;
 
-      case 'n':
-	flags |= MUTT_NOSYSRC;
-	break;
+        case 'n':
+          flags |= MUTT_NOSYSRC;
+          break;
 
-      case 'p':
-	sendflags |= SENDPOSTPONED;
-	break;
+        case 'p':
+          sendflags |= SENDPOSTPONED;
+          break;
 
-      case 'Q':
-        queries = mutt_add_list (queries, optarg);
-        break;
-      
-      case 'R':
-	flags |= MUTT_RO; /* read-only mode */
-	break;
+        case 'Q':
+          queries = mutt_add_list (queries, optarg);
+          break;
 
-      case 's':
-	subject = optarg;
-	break;
+        case 'R':
+          flags |= MUTT_RO; /* read-only mode */
+          break;
 
-      case 'v':
-	version++;
-	break;
+        case 's':
+          subject = optarg;
+          break;
 
-      case 'x': /* mailx compatible send mode */
-	sendflags |= SENDMAILX;
-	break;
+        case 'v':
+          version++;
+          break;
 
-      case 'y': /* My special hack mode */
-	flags |= MUTT_SELECT;
-	break;
+        case 'x': /* mailx compatible send mode */
+          sendflags |= SENDMAILX;
+          break;
 
-      case 'z':
-	flags |= MUTT_IGNORE;
-	break;
+        case 'y': /* My special hack mode */
+          flags |= MUTT_SELECT;
+          break;
 
-      case 'Z':
-	flags |= MUTT_BUFFY | MUTT_IGNORE;
-	break;
+        case 'z':
+          flags |= MUTT_IGNORE;
+          break;
 
-      default:
-	mutt_usage ();
+        case 'Z':
+          flags |= MUTT_BUFFY | MUTT_IGNORE;
+          break;
+
+        default:
+          mutt_usage ();
       }
   }
 
@@ -816,6 +832,7 @@ int main (int argc, char **argv, char **environ)
       puts (_(Licence));
       puts (_(Obtaining));
       puts (_(ReachingUs));
+      mutt_buffer_free (&folder);
       exit (0);
   }
 
@@ -854,32 +871,39 @@ int main (int argc, char **argv, char **environ)
   {
     for (; optind < argc; optind++)
       queries = mutt_add_list (queries, argv[optind]);
-    return mutt_query_variables (queries);
+    exit_code = mutt_query_variables (queries);
+    mutt_free_list (&queries);
+    goto cleanup_and_exit;
   }
   if (dump_variables)
-    return mutt_dump_variables();
+  {
+    exit_code = mutt_dump_variables();
+    goto cleanup_and_exit;
+  }
 
   if (alias_queries)
   {
-    int rv = 0;
     ADDRESS *a;
+
+    exit_code = 0;
     for (; optind < argc; optind++)
       alias_queries = mutt_add_list (alias_queries, argv[optind]);
     for (; alias_queries; alias_queries = alias_queries->next)
     {
       if ((a = mutt_lookup_alias (alias_queries->data)))
-      {	
+      {
 	/* output in machine-readable form */
 	mutt_addrlist_to_intl (a, NULL);
 	mutt_write_address_list (a, stdout, 0, 0);
       }
       else
       {
-	rv = 1;
+        exit_code = 1;
 	printf ("%s\n", alias_queries->data);
       }
     }
-    return rv;
+    mutt_free_list (&alias_queries);
+    goto cleanup_and_exit;
   }
 
   if (!option (OPTNOCURSES))
@@ -903,15 +927,15 @@ int main (int argc, char **argv, char **environ)
     /* we're not connected yet - skip mail folder creation */
     if (!mx_is_imap (fpath))
 #endif
-    if (stat (fpath, &sb) == -1 && errno == ENOENT)
-    {
-      snprintf (msg, sizeof (msg), _("%s does not exist. Create it?"), Maildir);
-      if (mutt_yesorno (msg, MUTT_YES) == MUTT_YES)
+      if (stat (fpath, &sb) == -1 && errno == ENOENT)
       {
-	if (mkdir (fpath, 0700) == -1 && errno != EEXIST)
-	  mutt_error ( _("Can't create %s: %s."), Maildir, strerror (errno));
+        snprintf (msg, sizeof (msg), _("%s does not exist. Create it?"), Maildir);
+        if (mutt_yesorno (msg, MUTT_YES) == MUTT_YES)
+        {
+          if (mkdir (fpath, 0700) == -1 && errno != EEXIST)
+            mutt_error ( _("Can't create %s: %s."), Maildir, strerror (errno));
+        }
       }
-    }
   }
 
   if (sendflags & SENDPOSTPONED)
@@ -919,8 +943,6 @@ int main (int argc, char **argv, char **environ)
     if (!option (OPTNOCURSES))
       mutt_flushinp ();
     ci_send_message (SENDPOSTPONED, NULL, NULL, NULL, NULL);
-    mutt_free_windows ();
-    mutt_endwin (NULL);
   }
   else if (subject || msg || sendflags || draftFile || includeFile || attach ||
 	   optind < argc)
@@ -932,7 +954,7 @@ int main (int argc, char **argv, char **environ)
     char *bodytext = NULL, *bodyfile = NULL;
     int rv = 0;
     char expanded_infile[_POSIX_PATH_MAX];
-    
+
     if (!option (OPTNOCURSES))
       mutt_flushinp ();
 
@@ -948,9 +970,12 @@ int main (int argc, char **argv, char **environ)
         if (url_parse_mailto (msg->env, &bodytext, argv[i]) < 0)
         {
           if (!option (OPTNOCURSES))
+          {
             mutt_endwin (NULL);
+            set_option (OPTNOCURSES);
+          }
           fputs (_("Failed to parse mailto: link\n"), stderr);
-          exit (1);
+          goto cleanup_and_exit;
         }
       }
       else
@@ -960,9 +985,12 @@ int main (int argc, char **argv, char **environ)
     if (!draftFile && option (OPTAUTOEDIT) && !msg->env->to && !msg->env->cc)
     {
       if (!option (OPTNOCURSES))
+      {
         mutt_endwin (NULL);
+        set_option (OPTNOCURSES);
+      }
       fputs (_("No recipients specified.\n"), stderr);
-      exit (1);
+      goto cleanup_and_exit;
     }
 
     if (subject)
@@ -988,7 +1016,7 @@ int main (int argc, char **argv, char **environ)
           if (edit_infile)
           {
             fputs (_("Cannot use -E flag with stdin\n"), stderr);
-            exit (1);
+            goto cleanup_and_exit;
           }
 	  fin = stdin;
         }
@@ -999,9 +1027,12 @@ int main (int argc, char **argv, char **environ)
 	  if ((fin = fopen (expanded_infile, "r")) == NULL)
 	  {
 	    if (!option (OPTNOCURSES))
+            {
 	      mutt_endwin (NULL);
+              set_option (OPTNOCURSES);
+            }
 	    perror (expanded_infile);
-	    exit (1);
+            goto cleanup_and_exit;
 	  }
 	}
       }
@@ -1018,11 +1049,14 @@ int main (int argc, char **argv, char **environ)
         if ((fout = safe_fopen (tempfile, "w")) == NULL)
         {
           if (!option (OPTNOCURSES))
+          {
             mutt_endwin (NULL);
+            set_option (OPTNOCURSES);
+          }
           perror (tempfile);
           safe_fclose (&fin);
           FREE (&tempfile);
-          exit (1);
+          goto cleanup_and_exit;
         }
         if (fin)
         {
@@ -1037,10 +1071,13 @@ int main (int argc, char **argv, char **environ)
         if ((fin = fopen (tempfile, "r")) == NULL)
         {
           if (!option (OPTNOCURSES))
+          {
             mutt_endwin (NULL);
+            set_option (OPTNOCURSES);
+          }
           perror (tempfile);
           FREE (&tempfile);
-          exit (1);
+          goto cleanup_and_exit;
         }
       }
       /* If editing the infile, keep it around afterwards so
@@ -1071,7 +1108,7 @@ int main (int argc, char **argv, char **environ)
         if (fstat (fileno (fin), &st))
         {
           perror (draftFile);
-          exit (1);
+          goto cleanup_and_exit;
         }
         context_hdr->content->length = st.st_size;
 
@@ -1139,10 +1176,13 @@ int main (int argc, char **argv, char **environ)
 	if (!a)
 	{
 	  if (!option (OPTNOCURSES))
+          {
 	    mutt_endwin (NULL);
+            set_option (OPTNOCURSES);
+          }
 	  fprintf (stderr, _("%s: unable to attach file.\n"), t->data);
 	  mutt_free_list (&attach);
-	  exit (1);
+	  goto cleanup_and_exit;
 	}
 	t = t->next;
       }
@@ -1160,16 +1200,22 @@ int main (int argc, char **argv, char **environ)
         if (truncate (expanded_infile, 0) == -1)
         {
           if (!option (OPTNOCURSES))
+          {
             mutt_endwin (NULL);
+            set_option (OPTNOCURSES);
+          }
           perror (expanded_infile);
-          exit (1);
+          goto cleanup_and_exit;
         }
         if ((fout = safe_fopen (expanded_infile, "a")) == NULL)
         {
           if (!option (OPTNOCURSES))
+          {
             mutt_endwin (NULL);
+            set_option (OPTNOCURSES);
+          }
           perror (expanded_infile);
-          exit (1);
+          goto cleanup_and_exit;
         }
 
         /* If the message was sent or postponed, these will already
@@ -1184,16 +1230,17 @@ int main (int argc, char **argv, char **environ)
           mutt_env_to_intl (msg->env, NULL, NULL);
         }
 
-        mutt_write_rfc822_header (fout, msg->env, msg->content, -1, 0);
+        mutt_write_rfc822_header (fout, msg->env, msg->content,
+                                  MUTT_WRITE_HEADER_POSTPONE, 0,
+                                  option (OPTCRYPTPROTHDRSREAD) &&
+                                  mutt_should_hide_protected_subject (msg));
         if (option (OPTRESUMEEDITEDDRAFTFILES))
           fprintf (fout, "X-Mutt-Resume-Draft: 1\n");
         fputc ('\n', fout);
         if ((mutt_write_mime_body (msg->content, fout) == -1))
         {
-          if (!option (OPTNOCURSES))
-            mutt_endwin (NULL);
           safe_fclose (&fout);
-          exit (1);
+          goto cleanup_and_exit;
         }
         safe_fclose (&fout);
       }
@@ -1208,65 +1255,78 @@ int main (int argc, char **argv, char **environ)
       FREE (&tempfile);
     }
 
-    mutt_free_windows ();
-    if (!option (OPTNOCURSES))
-      mutt_endwin (NULL);
-
     if (rv)
-      exit(1);
+      goto cleanup_and_exit;
   }
   else
   {
+    if (!folder)
+      folder = mutt_buffer_new ();
+
     if (flags & MUTT_BUFFY)
     {
+#ifdef USE_IMAP
+      int passive = option (OPTIMAPPASSIVE);
+      if (passive)
+        unset_option (OPTIMAPPASSIVE);
+#endif
       if (!mutt_buffy_check (0))
       {
-	mutt_endwin _("No mailbox with new mail.");
-	exit (1);
+        exit_endwin_msg = _("No mailbox with new mail.");
+        goto cleanup_and_exit;
       }
-      folder[0] = 0;
-      mutt_buffy (folder, sizeof (folder));
+      mutt_buffer_clear (folder);
+      mutt_buffer_buffy (folder);
+#ifdef USE_IMAP
+      if (passive)
+        set_option (OPTIMAPPASSIVE);
+#endif
     }
     else if (flags & MUTT_SELECT)
     {
-      if (!Incoming) {
-	mutt_endwin _("No incoming mailboxes defined.");
-	exit (1);
-      }
-      folder[0] = 0;
-      mutt_select_file (folder, sizeof (folder), MUTT_SEL_FOLDER | MUTT_SEL_BUFFY);
-      if (!folder[0])
+      if (!Incoming)
       {
-	mutt_endwin (NULL);
-	exit (0);
+        exit_endwin_msg = _("No incoming mailboxes defined.");
+	goto cleanup_and_exit;
+      }
+      mutt_buffer_clear (folder);
+      mutt_buffer_select_file (folder, MUTT_SEL_FOLDER | MUTT_SEL_BUFFY);
+      if (!mutt_buffer_len (folder))
+      {
+        exit_code = 0;
+	goto cleanup_and_exit;
       }
     }
 
-    if (!folder[0])
-      strfcpy (folder, NONULL(Spoolfile), sizeof (folder));
-    mutt_expand_path (folder, sizeof (folder));
+    if (!mutt_buffer_len (folder))
+      mutt_buffer_strcpy (folder, NONULL(Spoolfile));
+    mutt_buffer_expand_path (folder);
 
-    mutt_str_replace (&CurrentFolder, folder);
-    mutt_str_replace (&LastFolder, folder);
+    mutt_str_replace (&CurrentFolder, mutt_b2s (folder));
+    mutt_str_replace (&LastFolder, mutt_b2s (folder));
 
     if (flags & MUTT_IGNORE)
     {
       /* check to see if there are any messages in the folder */
-      switch (mx_check_empty (folder))
+      switch (mx_check_empty (mutt_b2s (folder)))
       {
 	case -1:
-	  mutt_endwin (strerror (errno));
-	  exit (1);
+          exit_endwin_msg = strerror (errno);
+          goto cleanup_and_exit;
 	case 1:
-	  mutt_endwin _("Mailbox is empty.");
-	  exit (1);
+          exit_endwin_msg = _("Mailbox is empty.");
+	  goto cleanup_and_exit;
       }
     }
 
-    mutt_folder_hook (folder);
+    mutt_folder_hook (mutt_b2s (folder));
 
-    if((Context = mx_open_mailbox (folder, ((flags & MUTT_RO) || option (OPTREADONLY)) ? MUTT_READONLY : 0, NULL))
-       || !explicit_folder)
+    Context = mx_open_mailbox (mutt_b2s (folder),
+                               ((flags & MUTT_RO) || option (OPTREADONLY)) ? MUTT_READONLY : 0,
+                               NULL);
+    mutt_buffer_free (&folder);
+
+    if (Context || !explicit_folder)
     {
 #ifdef USE_SIDEBAR
       mutt_sb_set_open_buffy ();
@@ -1275,16 +1335,25 @@ int main (int argc, char **argv, char **environ)
       if (Context)
 	FREE (&Context);
     }
-#ifdef USE_IMAP
-    imap_logout_all ();
-#endif
-#ifdef USE_SASL
-    mutt_sasl_done ();
-#endif
-    mutt_free_opts ();
-    mutt_free_windows ();
-    mutt_endwin (Errorbuf);
+
+    exit_endwin_msg = Errorbuf;
   }
 
-  exit (0);
+  exit_code = 0;
+
+cleanup_and_exit:
+  mutt_buffer_free (&folder);
+#ifdef USE_IMAP
+  imap_logout_all ();
+#endif
+#ifdef USE_SASL
+  mutt_sasl_done ();
+#endif
+  mutt_browser_cleanup ();
+  mutt_free_opts ();
+  mutt_free_windows ();
+  mutt_buffer_pool_free ();
+  if (!option (OPTNOCURSES))
+    mutt_endwin (exit_endwin_msg);
+  exit (exit_code);
 }

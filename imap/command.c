@@ -2,21 +2,21 @@
  * Copyright (C) 1996-1998,2010,2012 Michael R. Elkins <me@mutt.org>
  * Copyright (C) 1996-1999 Brandon Long <blong@fiction.net>
  * Copyright (C) 1999-2009,2011 Brendan Cully <brendan@kublai.com>
- * 
+ *
  *     This program is free software; you can redistribute it and/or modify
  *     it under the terms of the GNU General Public License as published by
  *     the Free Software Foundation; either version 2 of the License, or
  *     (at your option) any later version.
- * 
+ *
  *     This program is distributed in the hope that it will be useful,
  *     but WITHOUT ANY WARRANTY; without even the implied warranty of
  *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *     GNU General Public License for more details.
- * 
+ *
  *     You should have received a copy of the GNU General Public License
  *     along with this program; if not, write to the Free Software
  *     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
- */ 
+ */
 
 /* command.c: routines for sending commands to an IMAP server and parsing
  *  responses */
@@ -46,6 +46,7 @@ static int cmd_status (const char *s);
 static void cmd_handle_fatal (IMAP_DATA* idata);
 static int cmd_handle_untagged (IMAP_DATA* idata);
 static void cmd_parse_capability (IMAP_DATA* idata, char* s);
+static void cmd_parse_vanished (IMAP_DATA* idata, char* s);
 static void cmd_parse_expunge (IMAP_DATA* idata, const char* s);
 static void cmd_parse_list (IMAP_DATA* idata, char* s);
 static void cmd_parse_lsub (IMAP_DATA* idata, char* s);
@@ -59,16 +60,20 @@ static const char * const Capabilities[] = {
   "IMAP4",
   "IMAP4rev1",
   "STATUS",
-  "ACL", 
+  "ACL",
   "NAMESPACE",
   "AUTH=CRAM-MD5",
   "AUTH=GSSAPI",
   "AUTH=ANONYMOUS",
+  "AUTH=OAUTHBEARER",
   "STARTTLS",
   "LOGINDISABLED",
   "IDLE",
   "SASL-IR",
   "ENABLE",
+  "CONDSTORE",
+  "QRESYNC",
+  "LIST-EXTENDED",
 
   NULL
 };
@@ -165,7 +170,8 @@ int imap_cmd_step (IMAP_DATA* idata)
     cmd = &idata->cmds[c];
     if (cmd->state == IMAP_CMD_NEW)
     {
-      if (!ascii_strncmp (idata->buf, cmd->seq, SEQLEN)) {
+      if (!ascii_strncmp (idata->buf, cmd->seq, SEQLEN))
+      {
 	if (!stillrunning)
 	{
 	  /* first command in queue has finished - move queue pointer up */
@@ -191,7 +197,7 @@ int imap_cmd_step (IMAP_DATA* idata)
     dprint (3, (debugfile, "IMAP queue drained\n"));
     imap_cmd_finish (idata);
   }
-  
+
 
   return rc;
 }
@@ -297,7 +303,7 @@ void imap_cmd_finish (IMAP_DATA* idata)
 
   if (!(idata->state >= IMAP_SELECTED) || idata->ctx->closing)
     return;
-  
+
   if (idata->reopen & IMAP_REOPEN_ALLOW)
   {
     unsigned int count = idata->newMailCount;
@@ -310,8 +316,8 @@ void imap_cmd_finish (IMAP_DATA* idata)
       dprint (2, (debugfile, "imap_cmd_finish: Fetching new mail\n"));
       /* check_status: curs_main uses imap_check_mailbox to detect
        *   whether the index needs updating */
-      idata->check_status = IMAP_NEWMAIL_PENDING;
-      imap_read_headers (idata, idata->max_msn+1, count);
+      idata->check_status |= IMAP_NEWMAIL_PENDING;
+      imap_read_headers (idata, idata->max_msn+1, count, 0);
     }
     else if (idata->reopen & IMAP_EXPUNGE_PENDING)
     {
@@ -320,9 +326,8 @@ void imap_cmd_finish (IMAP_DATA* idata)
       /* Detect whether we've gotten unexpected EXPUNGE messages */
       if ((idata->reopen & IMAP_EXPUNGE_PENDING) &&
 	  !(idata->reopen & IMAP_EXPUNGE_EXPECTED))
-	idata->check_status = IMAP_EXPUNGE_PENDING;
-      idata->reopen &= ~(IMAP_EXPUNGE_PENDING | IMAP_NEWMAIL_PENDING |
-			 IMAP_EXPUNGE_EXPECTED);
+	idata->check_status |= IMAP_EXPUNGE_PENDING;
+      idata->reopen &= ~(IMAP_EXPUNGE_PENDING | IMAP_EXPUNGE_EXPECTED);
     }
   }
 
@@ -358,7 +363,7 @@ int imap_cmd_idle (IMAP_DATA* idata)
     /* successfully entered IDLE state */
     idata->state = IMAP_IDLE;
     /* queue automatic exit when next command is issued */
-    mutt_buffer_printf (idata->cmdbuf, "DONE\r\n");
+    mutt_buffer_addstr (idata->cmdbuf, "DONE\r\n");
     rc = IMAP_CMD_OK;
   }
   if (rc != IMAP_CMD_OK)
@@ -366,7 +371,7 @@ int imap_cmd_idle (IMAP_DATA* idata)
     dprint (1, (debugfile, "imap_cmd_idle: error starting IDLE\n"));
     return -1;
   }
-  
+
   return 0;
 }
 
@@ -421,7 +426,7 @@ static int cmd_queue (IMAP_DATA* idata, const char* cmdstr, int flags)
   if (!(cmd = cmd_new (idata)))
     return IMAP_CMD_BAD;
 
-  if (mutt_buffer_printf (idata->cmdbuf, "%s %s\r\n", cmd->seq, cmdstr) < 0)
+  if (mutt_buffer_add_printf (idata->cmdbuf, "%s %s\r\n", cmd->seq, cmdstr) < 0)
     return IMAP_CMD_BAD;
 
   return 0;
@@ -443,12 +448,12 @@ static int cmd_start (IMAP_DATA* idata, const char* cmdstr, int flags)
   if (flags & IMAP_CMD_QUEUE)
     return 0;
 
-  if (idata->cmdbuf->dptr == idata->cmdbuf->data)
+  if (mutt_buffer_len (idata->cmdbuf) == 0)
     return IMAP_CMD_BAD;
 
   rc = mutt_socket_write_d (idata->conn, idata->cmdbuf->data, -1,
                             flags & IMAP_CMD_PASS ? IMAP_LOG_PASS : IMAP_LOG_CMD);
-  idata->cmdbuf->dptr = idata->cmdbuf->data;
+  mutt_buffer_clear (idata->cmdbuf);
 
   /* unidle when command queue is flushed */
   if (idata->state == IMAP_IDLE)
@@ -461,7 +466,7 @@ static int cmd_start (IMAP_DATA* idata, const char* cmdstr, int flags)
 static int cmd_status (const char *s)
 {
   s = imap_next_word((char*)s);
-  
+
   if (!ascii_strncasecmp("OK", s, 2))
     return IMAP_CMD_OK;
   if (!ascii_strncasecmp("NO", s, 2))
@@ -481,7 +486,7 @@ static void cmd_handle_fatal (IMAP_DATA* idata)
     mx_fastclose_mailbox (idata->ctx);
     mutt_socket_close (idata->conn);
     mutt_error (_("Mailbox %s@%s closed"),
-	idata->conn->account.login, idata->conn->account.host);
+                idata->conn->account.login, idata->conn->account.host);
     mutt_sleep (1);
     idata->state = IMAP_DISCONNECTED;
   }
@@ -515,8 +520,7 @@ static int cmd_handle_untagged (IMAP_DATA* idata)
       /* new mail arrived */
       mutt_atoui (pn, &count);
 
-      if ( !(idata->reopen & IMAP_EXPUNGE_PENDING) &&
-	   count < idata->max_msn)
+      if (count < idata->max_msn)
       {
         /* Notes 6.0.3 has a tendency to report fewer messages exist than
          * it should. */
@@ -527,16 +531,13 @@ static int cmd_handle_untagged (IMAP_DATA* idata)
        * even when there is no new mail */
       else if (count == idata->max_msn)
 	dprint (3, (debugfile,
-          "cmd_handle_untagged: superfluous EXISTS message.\n"));
+                    "cmd_handle_untagged: superfluous EXISTS message.\n"));
       else
       {
-	if (!(idata->reopen & IMAP_EXPUNGE_PENDING))
-        {
-          dprint (2, (debugfile,
-            "cmd_handle_untagged: New mail in %s - %d messages total.\n",
-            idata->mailbox, count));
-	  idata->reopen |= IMAP_NEWMAIL_PENDING;
-        }
+        dprint (2, (debugfile,
+                    "cmd_handle_untagged: New mail in %s - %d messages total.\n",
+                    idata->mailbox, count));
+        idata->reopen |= IMAP_NEWMAIL_PENDING;
 	idata->newMailCount = count;
       }
     }
@@ -546,6 +547,9 @@ static int cmd_handle_untagged (IMAP_DATA* idata)
     else if (ascii_strncasecmp ("FETCH", s, 5) == 0)
       cmd_parse_fetch (idata, pn);
   }
+  else if ((idata->state >= IMAP_SELECTED) &&
+           ascii_strncasecmp ("VANISHED", s, 8) == 0)
+    cmd_parse_vanished (idata, pn);
   else if (ascii_strncasecmp ("CAPABILITY", s, 10) == 0)
     cmd_parse_capability (idata, s);
   else if (!ascii_strncasecmp ("OK [CAPABILITY", s, 14))
@@ -660,6 +664,96 @@ static void cmd_parse_expunge (IMAP_DATA* idata, const char* s)
   idata->reopen |= IMAP_EXPUNGE_PENDING;
 }
 
+/* cmd_parse_vanished: handles VANISHED (RFC 7162), which is like
+ *   expunge, but passes a seqset of UIDs.  An optional (EARLIER) argument
+ *   specifies not to decrement subsequent MSNs. */
+static void cmd_parse_vanished (IMAP_DATA* idata, char* s)
+{
+  int earlier = 0, rc;
+  char *end_of_seqset;
+  SEQSET_ITERATOR *iter;
+  unsigned int uid, exp_msn, cur;
+  HEADER* h;
+
+  dprint (2, (debugfile, "Handling VANISHED\n"));
+
+  if (ascii_strncasecmp ("(EARLIER)", s, 9) == 0)
+  {
+    /* The RFC says we should not decrement msns with the VANISHED EARLIER tag.
+     * My experimentation says that's crap. */
+    /* earlier = 1; */
+    s = imap_next_word (s);
+  }
+
+  end_of_seqset = s;
+  while (*end_of_seqset)
+  {
+    if (!strchr ("0123456789:,", *end_of_seqset))
+      *end_of_seqset = '\0';
+    else
+      end_of_seqset++;
+  }
+
+  iter = mutt_seqset_iterator_new (s);
+  if (!iter)
+  {
+    dprint (2, (debugfile, "VANISHED: empty seqset [%s]?\n", s));
+    return;
+  }
+
+  while ((rc = mutt_seqset_iterator_next (iter, &uid)) == 0)
+  {
+    h = (HEADER *)int_hash_find (idata->uid_hash, uid);
+    if (!h)
+      continue;
+
+    exp_msn = HEADER_DATA(h)->msn;
+
+    /* imap_expunge_mailbox() will rewrite h->index.
+     * It needs to resort using SORT_ORDER anyway, so setting to INT_MAX
+     * makes the code simpler and possibly more efficient. */
+    h->index = INT_MAX;
+    HEADER_DATA(h)->msn = 0;
+
+    if (exp_msn < 1 || exp_msn > idata->max_msn)
+    {
+      dprint (1, (debugfile,
+                  "VANISHED: msn for UID %u is incorrect.\n", uid));
+      continue;
+    }
+    if (idata->msn_index[exp_msn - 1] != h)
+    {
+      dprint (1, (debugfile,
+                  "VANISHED: msn_index for UID %u is incorrect.\n", uid));
+      continue;
+    }
+
+    idata->msn_index[exp_msn - 1] = NULL;
+
+    if (!earlier)
+    {
+      /* decrement seqno of those above. */
+      for (cur = exp_msn; cur < idata->max_msn; cur++)
+      {
+        h = idata->msn_index[cur];
+        if (h)
+          HEADER_DATA(h)->msn--;
+        idata->msn_index[cur - 1] = h;
+      }
+
+      idata->msn_index[idata->max_msn - 1] = NULL;
+      idata->max_msn--;
+    }
+  }
+
+  if (rc < 0)
+    dprint (1, (debugfile, "VANISHED: illegal seqset %s\n", s));
+
+  idata->reopen |= IMAP_EXPUNGE_PENDING;
+
+  mutt_seqset_iterator_free (&iter);
+}
+
 /* cmd_parse_fetch: Load fetch response into IMAP_DATA. Currently only
  *   handles unanticipated FETCH responses, and only FLAGS data. We get
  *   these if another client has changed flags for a mailbox we've selected.
@@ -668,21 +762,32 @@ static void cmd_parse_fetch (IMAP_DATA* idata, char* s)
 {
   unsigned int msn, uid;
   HEADER *h;
+  char *flags = NULL;
+  int uid_checked = 0;
   int server_changes = 0;
 
   dprint (3, (debugfile, "Handling FETCH\n"));
 
-  if (mutt_atoui (s, &msn) < 0 ||
-      msn < 1 || msn > idata->max_msn)
+  if (mutt_atoui (s, &msn) < 0)
   {
-    dprint (3, (debugfile, "FETCH response ignored for this message\n"));
+    dprint (3, (debugfile, "cmd_parse_fetch: Skipping FETCH response - illegal MSN\n"));
+    return;
+  }
+
+  if (msn < 1 || msn > idata->max_msn)
+  {
+    dprint (3, (debugfile,
+                "cmd_parse_fetch: Skipping FETCH response - MSN %u out of range\n",
+                msn));
     return;
   }
 
   h = idata->msn_index[msn - 1];
   if (!h || !h->active)
   {
-    dprint (3, (debugfile, "FETCH response ignored for this message\n"));
+    dprint (3, (debugfile,
+                "cmd_parse_fetch: Skipping FETCH response - MSN %u not in msn_index\n",
+                msn));
     return;
   }
 
@@ -704,16 +809,29 @@ static void cmd_parse_fetch (IMAP_DATA* idata, char* s)
 
     if (ascii_strncasecmp ("FLAGS", s, 5) == 0)
     {
-      imap_set_flags (idata, h, s, &server_changes);
-      if (server_changes)
+      flags = s;
+      if (uid_checked)
+        break;
+
+      s += 5;
+      SKIPWS(s);
+      if (*s != '(')
       {
-        /* If server flags could conflict with mutt's flags, reopen the mailbox. */
-        if (h->changed)
-          idata->reopen |= IMAP_EXPUNGE_PENDING;
-        else
-          idata->check_status = IMAP_FLAGS_PENDING;
+        dprint (1, (debugfile, "cmd_parse_fetch: bogus FLAGS response: %s\n",
+                    s));
+        return;
       }
-      return;
+      s++;
+      while (*s && *s != ')')
+        s++;
+      if (*s == ')')
+        s++;
+      else
+      {
+        dprint (1, (debugfile,
+                    "cmd_parse_fetch: Unterminated FLAGS response: %s\n", s));
+        return;
+      }
     }
     else if (ascii_strncasecmp ("UID", s, 3) == 0)
     {
@@ -721,22 +839,60 @@ static void cmd_parse_fetch (IMAP_DATA* idata, char* s)
       SKIPWS (s);
       if (mutt_atoui (s, &uid) < 0)
       {
-        dprint (2, (debugfile, "Illegal UID.  Skipping update.\n"));
+        dprint (1, (debugfile, "cmd_parse_fetch: Illegal UID.  Skipping update.\n"));
         return;
       }
       if (uid != HEADER_DATA(h)->uid)
       {
-        dprint (2, (debugfile, "FETCH UID vs MSN mismatch.  Skipping update.\n"));
+        dprint (1, (debugfile, "cmd_parse_fetch: UID vs MSN mismatch.  Skipping update.\n"));
         return;
       }
+      uid_checked = 1;
+      if (flags)
+        break;
       s = imap_next_word (s);
     }
+    else if (ascii_strncasecmp ("MODSEQ", s, 6) == 0)
+    {
+      s += 6;
+      SKIPWS(s);
+      if (*s != '(')
+      {
+        dprint (1, (debugfile, "cmd_parse_fetch: bogus MODSEQ response: %s\n",
+                    s));
+        return;
+      }
+      s++;
+      while (*s && *s != ')')
+        s++;
+      if (*s == ')')
+        s++;
+      else
+      {
+        dprint (1, (debugfile,
+                    "cmd_parse_fetch: Unterminated MODSEQ response: %s\n", s));
+        return;
+      }
+    }
     else if (*s == ')')
-      s++; /* end of request */
+      break; /* end of request */
     else if (*s)
     {
       dprint (2, (debugfile, "Only handle FLAGS updates\n"));
-      return;
+      break;
+    }
+  }
+
+  if (flags)
+  {
+    imap_set_flags (idata, h, flags, &server_changes);
+    if (server_changes)
+    {
+      /* If server flags could conflict with mutt's flags, reopen the mailbox. */
+      if (h->changed)
+        idata->reopen |= IMAP_EXPUNGE_PENDING;
+      else
+        idata->check_status |= IMAP_FLAGS_PENDING;
     }
   }
 }
@@ -767,12 +923,13 @@ static void cmd_parse_list (IMAP_DATA* idata, char* s)
   {
     if (!ascii_strncasecmp (s, "\\NoSelect", 9))
       list->noselect = 1;
+    else if (!ascii_strncasecmp (s, "\\NonExistent", 12)) /* rfc5258 */
+      list->noselect = 1;
     else if (!ascii_strncasecmp (s, "\\NoInferiors", 12))
       list->noinferiors = 1;
-    /* See draft-gahrns-imap-child-mailbox-?? */
-    else if (!ascii_strncasecmp (s, "\\HasNoChildren", 14))
+    else if (!ascii_strncasecmp (s, "\\HasNoChildren", 14)) /* rfc5258*/
       list->noinferiors = 1;
-    
+
     s = imap_next_word (s);
     if (*(s - 2) == ')')
       break;
@@ -782,7 +939,7 @@ static void cmd_parse_list (IMAP_DATA* idata, char* s)
   if (ascii_strncasecmp (s, "NIL", 3))
   {
     delimbuf[0] = '\0';
-    safe_strcat (delimbuf, 5, s); 
+    safe_strcat (delimbuf, 5, s);
     imap_unquote_string (delimbuf);
     list->delim = delimbuf[0];
   }
@@ -797,12 +954,30 @@ static void cmd_parse_list (IMAP_DATA* idata, char* s)
       idata->status = IMAP_FATAL;
       return;
     }
+
+    if (strlen(idata->buf) < litlen)
+    {
+      dprint (1, (debugfile, "Error parsing LIST mailbox\n"));
+      return;
+    }
+
     list->name = idata->buf;
+    s = list->name + litlen;
+    if (*s)
+    {
+      *s = '\0';
+      s++;
+      SKIPWS(s);
+    }
   }
   else
   {
-    imap_unmunge_mbox_name (idata, s);
     list->name = s;
+    /* Exclude rfc5258 RECURSIVEMATCH CHILDINFO suffix */
+    s = imap_next_word (s);
+    if (*s)
+      *(s - 1) = '\0';
+    imap_unmunge_mbox_name (idata, list->name);
   }
 
   if (list->name[0] == '\0')
@@ -873,7 +1048,7 @@ static void cmd_parse_myrights (IMAP_DATA* idata, const char* s)
 
   while (*s && !isspace((unsigned char) *s))
   {
-    switch (*s) 
+    switch (*s)
     {
       case 'l':
 	mutt_bit_set (idata->ctx->rights, MUTT_ACL_LOOKUP);
@@ -1048,14 +1223,14 @@ static void cmd_parse_status (IMAP_DATA* idata, char* s)
   {
     if (inc->magic != MUTT_IMAP)
       continue;
-    
-    if (imap_parse_path (inc->path, &mx) < 0)
+
+    if (imap_parse_path (mutt_b2s (inc->pathbuf), &mx) < 0)
     {
-      dprint (1, (debugfile, "Error parsing mailbox %s, skipping\n", inc->path));
+      dprint (1, (debugfile, "Error parsing mailbox %s, skipping\n", mutt_b2s (inc->pathbuf)));
       continue;
     }
     /* dprint (2, (debugfile, "Buffy entry: [%s] mbox: [%s]\n", inc->path, NONULL(mx.mbox))); */
-    
+
     if (imap_account_match (&idata->conn->account, &mx.account))
     {
       if (mx.mbox)
@@ -1071,7 +1246,7 @@ static void cmd_parse_status (IMAP_DATA* idata, char* s)
       {
         dprint (3, (debugfile, "Found %s in buffy list (OV: %u ON: %u U: %d)\n",
                     mailbox, olduv, oldun, status->unseen));
-        
+
 	if (option(OPTMAILCHECKRECENT))
 	{
 	  if (olduv && olduv == status->uidvalidity)
@@ -1125,5 +1300,7 @@ static void cmd_parse_enabled (IMAP_DATA* idata, const char* s)
     if (ascii_strncasecmp(s, "UTF8=ACCEPT", 11) == 0 ||
         ascii_strncasecmp(s, "UTF8=ONLY", 9) == 0)
       idata->unicode = 1;
+    if (ascii_strncasecmp(s, "QRESYNC", 7) == 0)
+      idata->qresync = 1;
   }
 }

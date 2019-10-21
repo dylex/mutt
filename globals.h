@@ -1,20 +1,20 @@
 /*
  * Copyright (C) 1996-2002,2010,2016 Michael R. Elkins <me@mutt.org>
- * 
+ *
  *     This program is free software; you can redistribute it and/or modify
  *     it under the terms of the GNU General Public License as published by
  *     the Free Software Foundation; either version 2 of the License, or
  *     (at your option) any later version.
- * 
+ *
  *     This program is distributed in the hope that it will be useful,
  *     but WITHOUT ANY WARRANTY; without even the implied warranty of
  *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *     GNU General Public License for more details.
- * 
+ *
  *     You should have received a copy of the GNU General Public License
  *     along with this program; if not, write to the Free Software
  *     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
- */ 
+ */
 
 WHERE void (*mutt_error) (const char *, ...);
 WHERE void (*mutt_message) (const char *, ...);
@@ -23,6 +23,7 @@ WHERE CONTEXT *Context;
 
 WHERE char Errorbuf[STRING];
 WHERE char AttachmentMarker[STRING];
+WHERE char ProtectedHeaderMarker[STRING];
 
 #if defined(DL_STANDALONE) && defined(USE_DOTLOCK)
 WHERE char *MuttDotlock;
@@ -64,6 +65,7 @@ WHERE char *ImapAuthenticators INITVAL (NULL);
 WHERE char *ImapDelimChars INITVAL (NULL);
 WHERE char *ImapHeaders;
 WHERE char *ImapLogin INITVAL (NULL);
+WHERE char *ImapOauthRefreshCmd INITVAL (NULL);
 WHERE char *ImapPass INITVAL (NULL);
 WHERE char *ImapUser INITVAL (NULL);
 #endif
@@ -107,6 +109,7 @@ WHERE char *PipeSep;
 WHERE char *PopAuthenticators INITVAL (NULL);
 WHERE short PopCheckTimeout;
 WHERE char *PopHost;
+WHERE char *PopOauthRefreshCmd INITVAL (NULL);
 WHERE char *PopPass INITVAL (NULL);
 WHERE char *PopUser INITVAL (NULL);
 #endif
@@ -115,6 +118,7 @@ WHERE char *Postponed;
 WHERE char *PostponeEncryptAs;
 WHERE char *Prefix;
 WHERE char *PrintCmd;
+WHERE char *ProtHdrSubject;
 WHERE char *NewMailCmd;
 WHERE char *QueryCmd;
 WHERE char *QueryFormat;
@@ -134,6 +138,7 @@ WHERE char *SimpleSearch;
 #if USE_SMTP
 WHERE char *SmtpAuthenticators INITVAL (NULL);
 WHERE char *SmtpPass INITVAL (NULL);
+WHERE char *SmtpOauthRefreshCmd INITVAL (NULL);
 WHERE char *SmtpUrl INITVAL (NULL);
 #endif /* USE_SMTP */
 WHERE char *Spoolfile;
@@ -167,6 +172,7 @@ WHERE const char *ReleaseDate;
 
 WHERE HASH *Groups;
 WHERE HASH *ReverseAlias;
+WHERE HASH *AutoSubscribeCache;
 
 WHERE LIST *AutoViewList INITVAL(0);
 WHERE LIST *AlternativeOrderList INITVAL(0);
@@ -234,6 +240,7 @@ WHERE LIST *SidebarWhitelist INITVAL(0);
 #endif
 
 #ifdef USE_IMAP
+WHERE long  ImapFetchChunkSize;
 WHERE short ImapKeepalive;
 WHERE short ImapPipelineDepth;
 WHERE short ImapPollTimeout;
@@ -254,7 +261,7 @@ WHERE REGEXP PgpGoodSign;
 WHERE REGEXP PgpDecryptionOkay;
 WHERE char *PgpDefaultKey;
 WHERE char *PgpSignAs;
-WHERE short PgpTimeout;
+WHERE long  PgpTimeout;
 WHERE char *PgpEntryFormat;
 WHERE char *PgpClearSignCommand;
 WHERE char *PgpDecodeCommand;
@@ -273,7 +280,7 @@ WHERE char *PgpGetkeysCommand;
 /*-- formerly in smime.h --*/
 WHERE char *SmimeDefaultKey;
 WHERE char *SmimeSignAs;
-WHERE short SmimeTimeout;
+WHERE long  SmimeTimeout;
 WHERE char *SmimeCertificates;
 WHERE char *SmimeKeys;
 WHERE char *SmimeCryptAlg;
@@ -306,7 +313,7 @@ extern const char * const Months[];
 #endif
 
 #ifdef MAIN_C
-/* so that global vars get included */ 
+/* so that global vars get included */
 #include "mx.h"
 #include "mutt_regex.h"
 #include "buffy.h"

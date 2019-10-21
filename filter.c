@@ -1,20 +1,20 @@
 /*
  * Copyright (C) 1996-2000 Michael R. Elkins.
- * 
+ *
  *     This program is free software; you can redistribute it and/or modify
  *     it under the terms of the GNU General Public License as published by
  *     the Free Software Foundation; either version 2 of the License, or
  *     (at your option) any later version.
- * 
+ *
  *     This program is distributed in the hope that it will be useful,
  *     but WITHOUT ANY WARRANTY; without even the implied warranty of
  *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *     GNU General Public License for more details.
- * 
+ *
  *     You should have received a copy of the GNU General Public License
  *     along with this program; if not, write to the Free Software
  *     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
- */ 
+ */
 
 #if HAVE_CONFIG_H
 # include "config.h"
@@ -22,6 +22,9 @@
 
 #include "mutt.h"
 #include "mutt_curses.h"
+#ifdef USE_IMAP
+# include "imap.h"
+#endif
 
 #include <unistd.h>
 #include <stdlib.h>
@@ -137,7 +140,7 @@ mutt_create_filter_fd (const char *cmd, FILE **in, FILE **out, FILE **err,
       close (pin[0]);
       close (pin[1]);
     }
-    
+
     if (out)
     {
       close (pout[0]);
@@ -182,10 +185,33 @@ pid_t mutt_create_filter (const char *s, FILE **in, FILE **out, FILE **err)
 int mutt_wait_filter (pid_t pid)
 {
   int rc;
-  
+
   waitpid (pid, &rc, 0);
   mutt_unblock_signals_system (1);
   rc = WIFEXITED (rc) ? WEXITSTATUS (rc) : -1;
-  
+
+  return rc;
+}
+
+/*
+ * This is used for filters that are actually interactive commands
+ * with input piped in: e.g. in mutt_view_attachment(), a mailcap
+ * entry without copiousoutput _and_ without a %s.
+ *
+ * For those cases, we treat it like a blocking system command, and
+ * poll IMAP to keep connections open.
+ */
+int mutt_wait_interactive_filter (pid_t pid)
+{
+  int rc;
+
+#ifndef USE_IMAP
+  waitpid (pid, &rc, 0);
+#else
+  rc = imap_wait_keepalive (pid);
+#endif
+  mutt_unblock_signals_system (1);
+  rc = WIFEXITED (rc) ? WEXITSTATUS (rc) : -1;
+
   return rc;
 }

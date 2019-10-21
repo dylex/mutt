@@ -22,12 +22,12 @@
 
 /*
  * NOTE
- * 
+ *
  * This code used to be the parser for GnuPG's output.
- * 
- * Nowadays, we are using an external pubring lister with PGP which mimics 
+ *
+ * Nowadays, we are using an external pubring lister with PGP which mimics
  * gpg's output format.
- * 
+ *
  */
 
 #if HAVE_CONFIG_H
@@ -246,37 +246,46 @@ static pgp_key_t parse_pub_line (char *buf, int *is_subkey, pgp_key_t k)
       }
       case 6:			/* timestamp (1998-02-28) */
       {
-	char tstr[11];
-	struct tm time;
-
 	dprint (2, (debugfile, "time stamp: %s\n", p));
 
-	if (!p)
-	  break;
-	time.tm_sec = 0;
-	time.tm_min = 0;
-	time.tm_hour = 12;
-	strncpy (tstr, p, 11);
-	tstr[4] = '\0';
-	tstr[7] = '\0';
-	if (mutt_atoi (tstr, &time.tm_year) < 0)
-	{
-	  p = tstr;
-	  goto bail;
-	}
-	time.tm_year -= 1900;
-	if (mutt_atoi (tstr+5, &time.tm_mon) < 0)
-	{
-	  p = tstr+5;
-	  goto bail;
-	}
-	time.tm_mon -= 1;
-	if (mutt_atoi (tstr+8, &time.tm_mday) < 0)
-	{
-	  p = tstr+8;
-	  goto bail;
-	}
-	tmp.gen_time = mutt_mktime (&time, 0);
+        if (strchr (p, '-'))   /* gpg pre-2.0.10 used format (yyyy-mm-dd) */
+        {
+          char tstr[11];
+          struct tm time;
+
+          time.tm_sec = 0;
+          time.tm_min = 0;
+          time.tm_hour = 12;
+          strncpy (tstr, p, 11);
+          tstr[4] = '\0';
+          tstr[7] = '\0';
+          if (mutt_atoi (tstr, &time.tm_year) < 0)
+          {
+            p = tstr;
+            goto bail;
+          }
+          time.tm_year -= 1900;
+          if (mutt_atoi (tstr+5, &time.tm_mon) < 0)
+          {
+            p = tstr+5;
+            goto bail;
+          }
+          time.tm_mon -= 1;
+          if (mutt_atoi (tstr+8, &time.tm_mday) < 0)
+          {
+            p = tstr+8;
+            goto bail;
+          }
+          tmp.gen_time = mutt_mktime (&time, 0);
+        }
+        else                  /* gpg 2.0.10+ uses seconds since 1970-01-01 */
+        {
+          unsigned long long secs;
+
+          if (mutt_atoull (p, &secs) < 0)
+            goto bail;
+          tmp.gen_time = (time_t)secs;
+        }
         break;
       }
       case 7:			/* valid for n days */
@@ -329,26 +338,26 @@ static pgp_key_t parse_pub_line (char *buf, int *is_subkey, pgp_key_t k)
         break;
       case 12:			/* key capabilities */
 	dprint (2, (debugfile, "capabilities info: %s\n", p));
-	
-	while(*p)
-	  {
-	    switch(*p++)
-	      {
-	      case 'D':
-		flags |= KEYFLAG_DISABLED;
-		break;
 
-	      case 'e':
-		flags |= KEYFLAG_CANENCRYPT;
-		break;
+	while (*p)
+        {
+          switch (*p++)
+          {
+            case 'D':
+              flags |= KEYFLAG_DISABLED;
+              break;
 
-	      case 's':
-		flags |= KEYFLAG_CANSIGN;
-		break;
-	      }
-	  }
+            case 'e':
+              flags |= KEYFLAG_CANENCRYPT;
+              break;
 
-        if (!is_uid && 
+            case 's':
+              flags |= KEYFLAG_CANSIGN;
+              break;
+          }
+        }
+
+        if (!is_uid &&
 	    (!*is_subkey || !option (OPTPGPIGNORESUB)
 	     || !((flags & KEYFLAG_DISABLED)
 		  || (flags & KEYFLAG_REVOKED)
@@ -356,7 +365,7 @@ static pgp_key_t parse_pub_line (char *buf, int *is_subkey, pgp_key_t k)
 	  tmp.flags |= flags;
 
 	break;
-      
+
       default:
         break;
     }
@@ -394,7 +403,7 @@ pgp_key_t pgp_get_candidates (pgp_ring_t keyring, LIST * hints)
     return NULL;
 
   mutt_str_replace (&_chs, Charset);
-  
+
   thepid = pgp_invoke_list_keys (NULL, &fp, NULL, -1, -1, devnull,
 				 keyring, hints);
   if (thepid == -1)
@@ -420,7 +429,7 @@ pgp_key_t pgp_get_candidates (pgp_ring_t keyring, LIST * hints)
       if (is_sub)
       {
 	pgp_uid_t **l;
-	
+
 	k->flags  |= KEYFLAG_SUBKEY;
 	k->parent  = mainkey;
 	for (l = &k->address; *l; l = &(*l)->next)
@@ -439,7 +448,6 @@ pgp_key_t pgp_get_candidates (pgp_ring_t keyring, LIST * hints)
   mutt_wait_filter (thepid);
 
   close (devnull);
-  
+
   return db;
 }
-

@@ -1,21 +1,21 @@
 /*
  * Copyright (C) 1996-2002,2010,2013 Michael R. Elkins <me@mutt.org>
  * Copyright (C) 1999-2003 Thomas Roessler <roessler@does-not-exist.org>
- * 
+ *
  *     This program is free software; you can redistribute it and/or modify
  *     it under the terms of the GNU General Public License as published by
  *     the Free Software Foundation; either version 2 of the License, or
  *     (at your option) any later version.
- * 
+ *
  *     This program is distributed in the hope that it will be useful,
  *     but WITHOUT ANY WARRANTY; without even the implied warranty of
  *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *     GNU General Public License for more details.
- * 
+ *
  *     You should have received a copy of the GNU General Public License
  *     along with this program; if not, write to the Free Software
  *     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
- */ 
+ */
 
 #if HAVE_CONFIG_H
 # include "config.h"
@@ -96,7 +96,7 @@ struct mx_ops* mx_get_ops (int magic)
 #define mutt_is_spool(s)  (mutt_strcmp (Spoolfile, s) == 0)
 
 #ifdef USE_DOTLOCK
-/* parameters: 
+/* parameters:
  * path - file to lock
  * retry - should retry if unable to lock?
  */
@@ -105,30 +105,39 @@ struct mx_ops* mx_get_ops (int magic)
 
 static int invoke_dotlock (const char *path, int dummy, int flags, int retry)
 {
-  char cmd[LONG_STRING + _POSIX_PATH_MAX];
-  char f[SHORT_STRING + _POSIX_PATH_MAX];
+  BUFFER *cmd = NULL;
+  BUFFER *f = NULL;
   char r[SHORT_STRING];
-  
+  int rc;
+
+  cmd = mutt_buffer_pool_get ();
+  f = mutt_buffer_pool_get ();
+
   if (flags & DL_FL_RETRY)
     snprintf (r, sizeof (r), "-r %d ", retry ? MAXLOCKATTEMPT : 0);
-  
-  mutt_quote_filename (f, sizeof (f), path);
-  
-  snprintf (cmd, sizeof (cmd),
-	    "%s %s%s%s%s%s%s%s",
-	    NONULL (MuttDotlock),
-	    flags & DL_FL_TRY ? "-t " : "",
-	    flags & DL_FL_UNLOCK ? "-u " : "",
-	    flags & DL_FL_USEPRIV ? "-p " : "",
-	    flags & DL_FL_FORCE ? "-f " : "",
-	    flags & DL_FL_UNLINK ? "-d " : "",
-	    flags & DL_FL_RETRY ? r : "",
-	    f);
-  
-  return mutt_system (cmd);
+
+  mutt_buffer_quote_filename (f, path);
+
+  mutt_buffer_printf (cmd,
+                      "%s %s%s%s%s%s%s%s",
+                      NONULL (MuttDotlock),
+                      flags & DL_FL_TRY ? "-t " : "",
+                      flags & DL_FL_UNLOCK ? "-u " : "",
+                      flags & DL_FL_USEPRIV ? "-p " : "",
+                      flags & DL_FL_FORCE ? "-f " : "",
+                      flags & DL_FL_UNLINK ? "-d " : "",
+                      flags & DL_FL_RETRY ? r : "",
+                      mutt_b2s (f));
+
+  rc = mutt_system (mutt_b2s (cmd));
+
+  mutt_buffer_pool_release (&cmd);
+  mutt_buffer_pool_release (&f);
+
+  return rc;
 }
 
-#else 
+#else
 
 #define invoke_dotlock dotlock_invoke
 
@@ -147,17 +156,17 @@ retry_lock:
     if (!option (OPTNOCURSES))
     {
       char msg[LONG_STRING];
-      
+
       snprintf(msg, sizeof(msg), _("Lock count exceeded, remove lock for %s?"),
 	       path);
-      if(retry && mutt_yesorno(msg, MUTT_YES) == MUTT_YES)
+      if (retry && mutt_yesorno(msg, MUTT_YES) == MUTT_YES)
       {
 	flags |= DL_FL_FORCE;
 	retry--;
 	mutt_clear_error ();
 	goto retry_lock;
       }
-    } 
+    }
     else
     {
       mutt_error ( _("Can't dotlock %s.\n"), path);
@@ -168,7 +177,7 @@ retry_lock:
 
 static int undotlock_file (const char *path, int fd)
 {
-  return (invoke_dotlock(path, fd, DL_FL_USEPRIV | DL_FL_UNLOCK, 0) == DL_EX_OK ? 
+  return (invoke_dotlock(path, fd, DL_FL_USEPRIV | DL_FL_UNLOCK, 0) == DL_EX_OK ?
 	  0 : -1);
 }
 
@@ -190,7 +199,7 @@ int mx_lock_file (const char *path, int fd, int excl, int dot, int timeout)
 
 #ifdef USE_FCNTL
   struct flock lck;
-  
+
   memset (&lck, 0, sizeof (struct flock));
   lck.l_type = excl ? F_WRLCK : F_RDLCK;
   lck.l_whence = SEEK_SET;
@@ -208,7 +217,7 @@ int mx_lock_file (const char *path, int fd, int excl, int dot, int timeout)
 
     if (fstat (fd, &sb) != 0)
       sb.st_size = 0;
-    
+
     if (count == 0)
       prev_sb = sb;
 
@@ -241,7 +250,7 @@ int mx_lock_file (const char *path, int fd, int excl, int dot, int timeout)
 
     if (fstat(fd, &sb) != 0)
       sb.st_size = 0;
-    
+
     if (count == 0)
       prev_sb = sb;
 
@@ -302,7 +311,7 @@ int mx_unlock_file (const char *path, int fd, int dot)
   if (dot)
     undotlock_file (path, fd);
 #endif
-  
+
   return 0;
 }
 
@@ -386,7 +395,7 @@ int mx_get_magic (const char *path)
   FILE *f;
 
 #ifdef USE_IMAP
-  if(mx_is_imap(path))
+  if (mx_is_imap(path))
     return MUTT_IMAP;
 #endif /* USE_IMAP */
 
@@ -422,7 +431,11 @@ int mx_get_magic (const char *path)
   }
   else if ((f = fopen (path, "r")) != NULL)
   {
+#ifdef HAVE_UTIMENSAT
+    struct timespec ts[2];
+#else
     struct utimbuf times;
+#endif /* HAVE_UTIMENSAT */
     int ch;
 
     /* Some mailbox creation tools erroneously append a blank line to
@@ -452,9 +465,15 @@ int mx_get_magic (const char *path)
        * only the type was accessed.  This is important, because detection
        * of "new mail" depends on those times set correctly.
        */
+#ifdef HAVE_UTIMENSAT
+      mutt_get_stat_timespec (&ts[0], &st, MUTT_STAT_ATIME);
+      mutt_get_stat_timespec (&ts[1], &st, MUTT_STAT_MTIME);
+      utimensat (0, path, ts, 0);
+#else
       times.actime = st.st_atime;
       times.modtime = st.st_mtime;
       utime (path, &times);
+#endif
     }
   }
   else
@@ -563,6 +582,7 @@ CONTEXT *mx_open_mailbox (const char *path, int flags, CONTEXT *pctx)
 {
   CONTEXT *ctx = pctx;
   int rc;
+  char realpathbuf[PATH_MAX];
 
   if (!ctx)
     ctx = safe_malloc (sizeof (CONTEXT));
@@ -575,8 +595,10 @@ CONTEXT *mx_open_mailbox (const char *path, int flags, CONTEXT *pctx)
       FREE (&ctx);
     return NULL;
   }
-  if (! (ctx->realpath = realpath (ctx->path, NULL)) )
+  if (! realpath (ctx->path, realpathbuf) )
     ctx->realpath = safe_strdup (ctx->path);
+  else
+    ctx->realpath = safe_strdup (realpathbuf);
 
   ctx->msgnotreadyet = -1;
   ctx->collapsed = 0;
@@ -661,16 +683,28 @@ CONTEXT *mx_open_mailbox (const char *path, int flags, CONTEXT *pctx)
 void mx_fastclose_mailbox (CONTEXT *ctx)
 {
   int i;
+#ifdef HAVE_UTIMENSAT
+  struct timespec ts[2];
+#else
   struct utimbuf ut;
+#endif /* HAVE_UTIMENSAT */
 
-  if(!ctx) 
+  if (!ctx)
     return;
 
   /* fix up the times so buffy won't get confused */
-  if (ctx->peekonly && ctx->path && (ctx->mtime > ctx->atime)) {
-    ut.actime  = ctx->atime;
-    ut.modtime = ctx->mtime;
+  if (ctx->peekonly && ctx->path &&
+      (mutt_timespec_compare (&ctx->mtime, &ctx->atime) > 0))
+  {
+#ifdef HAVE_UTIMENSAT
+    ts[0] = ctx->atime;
+    ts[1] = ctx->mtime;
+    utimensat (0, ctx->path, ts, 0);
+#else
+    ut.actime  = ctx->atime.tv_sec;
+    ut.modtime = ctx->mtime.tv_sec;
     utime (ctx->path, &ut);
+#endif /* HAVE_UTIMENSAT */
   }
 
   /* never announce that a mailbox we've just left has new mail. #3290
@@ -698,7 +732,7 @@ void mx_fastclose_mailbox (CONTEXT *ctx)
   FREE (&ctx->path);
   FREE (&ctx->realpath);
   FREE (&ctx->pattern);
-  if (ctx->limit_pattern) 
+  if (ctx->limit_pattern)
     mutt_pattern_free (&ctx->limit_pattern);
   safe_fclose (&ctx->fp);
   memset (ctx, 0, sizeof (CONTEXT));
@@ -707,13 +741,25 @@ void mx_fastclose_mailbox (CONTEXT *ctx)
 /* save changes to disk */
 static int sync_mailbox (CONTEXT *ctx, int *index_hint)
 {
+  int rc;
+
   if (!ctx->mx_ops || !ctx->mx_ops->sync)
     return -1;
 
   if (!ctx->quiet)
+  {
+    /* L10N: Displayed before/as a mailbox is being synced */
     mutt_message (_("Writing %s..."), ctx->path);
+  }
 
-  return ctx->mx_ops->sync (ctx, index_hint);
+  rc = ctx->mx_ops->sync (ctx, index_hint);
+  if (rc != 0 && !ctx->quiet)
+  {
+    /* L10N: Displayed if a mailbox sync fails */
+    mutt_error (_("Unable to write %s!"), ctx->path);
+  }
+
+  return rc;
 }
 
 /* move deleted mails to the trash folder */
@@ -805,7 +851,7 @@ int mx_close_mailbox (CONTEXT *ctx, int *index_hint)
 
   for (i = 0; i < ctx->msgcount; i++)
   {
-    if (!ctx->hdrs[i]->deleted && ctx->hdrs[i]->read 
+    if (!ctx->hdrs[i]->deleted && ctx->hdrs[i]->read
         && !(ctx->hdrs[i]->flagged && option (OPTKEEPFLAGGED)))
       read_msgs++;
   }
@@ -838,14 +884,14 @@ int mx_close_mailbox (CONTEXT *ctx, int *index_hint)
     }
   }
 
-  /* 
+  /*
    * There is no point in asking whether or not to purge if we are
    * just marking messages as "trash".
    */
   if (ctx->deleted && !(ctx->magic == MUTT_MAILDIR && option (OPTMAILDIRTRASH)))
   {
     snprintf (buf, sizeof (buf), ctx->deleted == 1
-	     ? _("Purge %d deleted message?") : _("Purge %d deleted messages?"),
+              ? _("Purge %d deleted message?") : _("Purge %d deleted messages?"),
 	      ctx->deleted);
     if ((purge = query_quadoption (OPT_DELETE, buf)) < 0)
     {
@@ -871,20 +917,20 @@ int mx_close_mailbox (CONTEXT *ctx, int *index_hint)
 #ifdef USE_IMAP
     /* try to use server-side copy first */
     i = 1;
-    
+
     if (ctx->magic == MUTT_IMAP && mx_is_imap (mbox))
     {
       /* tag messages for moving, and clear old tags, if any */
       for (i = 0; i < ctx->msgcount; i++)
 	if (ctx->hdrs[i]->read && !ctx->hdrs[i]->deleted
-            && !(ctx->hdrs[i]->flagged && option (OPTKEEPFLAGGED))) 
+            && !(ctx->hdrs[i]->flagged && option (OPTKEEPFLAGGED)))
 	  ctx->hdrs[i]->tagged = 1;
 	else
 	  ctx->hdrs[i]->tagged = 0;
-      
+
       i = imap_copy_messages (ctx, NULL, mbox, 1);
     }
-    
+
     if (i == 0) /* success */
       mutt_clear_error ();
     else if (i == -1) /* horrible error, bail */
@@ -919,10 +965,10 @@ int mx_close_mailbox (CONTEXT *ctx, int *index_hint)
 	  }
 	}
       }
-    
+
       mx_close_mailbox (&f, NULL);
     }
-    
+
   }
   else if (!ctx->changed && ctx->deleted == 0)
   {
@@ -981,10 +1027,10 @@ int mx_close_mailbox (CONTEXT *ctx, int *index_hint)
   {
     if (move_messages)
       mutt_message (_("%d kept, %d moved, %d deleted."),
-	ctx->msgcount - ctx->deleted, read_msgs, ctx->deleted);
+                    ctx->msgcount - ctx->deleted, read_msgs, ctx->deleted);
     else
       mutt_message (_("%d kept, %d deleted."),
-	ctx->msgcount - ctx->deleted, ctx->deleted);
+                    ctx->msgcount - ctx->deleted, ctx->deleted);
   }
 
   if (ctx->msgcount == ctx->deleted &&
@@ -1020,8 +1066,8 @@ int mx_close_mailbox (CONTEXT *ctx, int *index_hint)
 
 void mx_update_tables(CONTEXT *ctx, int committing)
 {
-  int i, j;
-  
+  int i, j, padding;
+
   /* update memory to reflect the new state of the mailbox */
   ctx->vcount = 0;
   ctx->vsize = 0;
@@ -1031,10 +1077,11 @@ void mx_update_tables(CONTEXT *ctx, int committing)
   ctx->unread = 0;
   ctx->changed = 0;
   ctx->flagged = 0;
+  padding = mx_msg_padding_size (ctx);
 #define this_body ctx->hdrs[j]->content
   for (i = 0, j = 0; i < ctx->msgcount; i++)
   {
-    if ((committing && (!ctx->hdrs[i]->deleted || 
+    if ((committing && (!ctx->hdrs[i]->deleted ||
 			(ctx->magic == MUTT_MAILDIR && option (OPTMAILDIRTRASH)))) ||
 	(!committing && ctx->hdrs[i]->active))
     {
@@ -1049,14 +1096,17 @@ void mx_update_tables(CONTEXT *ctx, int committing)
 	ctx->v2r[ctx->vcount] = j;
 	ctx->hdrs[j]->virtual = ctx->vcount++;
 	ctx->vsize += this_body->length + this_body->offset -
-	  this_body->hdr_offset;
+          this_body->hdr_offset + padding;
       }
 
       if (committing)
+      {
 	ctx->hdrs[j]->changed = 0;
+        ctx->hdrs[j]->env->changed = 0;
+      }
       else if (ctx->hdrs[j]->changed)
 	ctx->changed = 1;
-      
+
       if (!committing || (ctx->magic == MUTT_MAILDIR && option (OPTMAILDIRTRASH)))
       {
 	if (ctx->hdrs[j]->deleted)
@@ -1068,11 +1118,11 @@ void mx_update_tables(CONTEXT *ctx, int committing)
       if (ctx->hdrs[j]->flagged)
 	ctx->flagged++;
       if (!ctx->hdrs[j]->read)
-      { 
+      {
 	ctx->unread++;
 	if (!ctx->hdrs[j]->old)
 	  ctx->new++;
-      } 
+      }
 
       j++;
     }
@@ -1145,7 +1195,7 @@ int mx_sync_mailbox (CONTEXT *ctx, int *index_hint)
     char buf[SHORT_STRING];
 
     snprintf (buf, sizeof (buf), ctx->deleted == 1
-	     ? _("Purge %d deleted message?") : _("Purge %d deleted messages?"),
+              ? _("Purge %d deleted message?") : _("Purge %d deleted messages?"),
 	      ctx->deleted);
     if ((purge = query_quadoption (OPT_DELETE, buf)) < 0)
       return (-1);
@@ -1202,7 +1252,7 @@ int mx_sync_mailbox (CONTEXT *ctx, int *index_hint)
     }
 
     mutt_sleep (0);
-    
+
     if (ctx->msgcount == ctx->deleted &&
 	(ctx->magic == MUTT_MBOX || ctx->magic == MUTT_MMDF) &&
 	!mutt_is_spool (ctx->path) && !option (OPTSAVEEMPTY))
@@ -1213,9 +1263,9 @@ int mx_sync_mailbox (CONTEXT *ctx, int *index_hint)
     }
 
     /* if we haven't deleted any messages, we don't need to resort */
-    /* ... except for certain folder formats which need "unsorted" 
+    /* ... except for certain folder formats which need "unsorted"
      * sort order in order to synchronize folders.
-     * 
+     *
      * MH and maildir are safe.  mbox-style seems to need re-sorting,
      * at least with the new threading code.
      */
@@ -1245,9 +1295,9 @@ MESSAGE *mx_open_new_message (CONTEXT *dest, HEADER *hdr, int flags)
 
   if (!dest->mx_ops || !dest->mx_ops->open_new_msg)
   {
-      dprint (1, (debugfile, "mx_open_new_message(): function unimplemented for mailbox type %d.\n",
-              dest->magic));
-      return NULL;
+    dprint (1, (debugfile, "mx_open_new_message(): function unimplemented for mailbox type %d.\n",
+                dest->magic));
+    return NULL;
   }
 
   msg = safe_calloc (1, sizeof (MESSAGE));
@@ -1262,7 +1312,7 @@ MESSAGE *mx_open_new_message (CONTEXT *dest, HEADER *hdr, int flags)
     msg->received = hdr->received;
   }
 
-  if(msg->received == 0)
+  if (msg->received == 0)
     time(&msg->received);
 
   if (dest->mx_ops->open_new_msg (msg, dest, hdr) == 0)
@@ -1350,7 +1400,7 @@ int mx_close_message (CONTEXT *ctx, MESSAGE **msg)
   if ((*msg)->path)
   {
     dprint (1, (debugfile, "mx_close_message (): unlinking %s\n",
-            (*msg)->path));
+                (*msg)->path));
     unlink ((*msg)->path);
     FREE (&(*msg)->path);
   }
@@ -1363,14 +1413,14 @@ void mx_alloc_memory (CONTEXT *ctx)
 {
   int i;
   size_t s = MAX (sizeof (HEADER *), sizeof (int));
-  
+
   if ((ctx->hdrmax + 25) * s < ctx->hdrmax * s)
   {
     mutt_error _("Integer overflow -- can't allocate memory.");
     sleep (1);
     mutt_exit (1);
   }
-  
+
   if (ctx->hdrs)
   {
     safe_realloc (&ctx->hdrs, sizeof (HEADER *) * (ctx->hdrmax += 25));
@@ -1419,7 +1469,7 @@ void mx_update_context (CONTEXT *ctx, int new_messages)
     {
       HEADER *h2;
 
-      if (!ctx->id_hash)	
+      if (!ctx->id_hash)
 	ctx->id_hash = mutt_make_id_hash (ctx);
 
       h2 = hash_find (ctx->id_hash, h->env->supersedes);
@@ -1428,7 +1478,7 @@ void mx_update_context (CONTEXT *ctx, int new_messages)
       if (h2)
       {
 	h2->superseded = 1;
-	if (option (OPTSCORE)) 
+	if (option (OPTSCORE))
 	  mutt_score_message (ctx, h2, 1);
       }
     }
@@ -1440,7 +1490,7 @@ void mx_update_context (CONTEXT *ctx, int new_messages)
       hash_insert (ctx->subj_hash, h->env->real_subj, h);
     mutt_label_hash_add (ctx, h);
 
-    if (option (OPTSCORE)) 
+    if (option (OPTSCORE))
       mutt_score_message (ctx, h, 0);
 
     if (h->changed)
@@ -1475,11 +1525,48 @@ int mx_check_empty (const char *path)
       return mh_check_empty (path);
     case MUTT_MAILDIR:
       return maildir_check_empty (path);
+#ifdef USE_IMAP
+    case MUTT_IMAP:
+    {
+      int passive, rv;
+
+      passive = option (OPTIMAPPASSIVE);
+      if (passive)
+        unset_option (OPTIMAPPASSIVE);
+      rv = imap_status (path, 0);
+      if (passive)
+        set_option (OPTIMAPPASSIVE);
+      return (rv <= 0);
+    }
+#endif
     default:
       errno = EINVAL;
       return -1;
   }
   /* not reached */
+}
+
+/* mx_msg_padding_size: Returns the padding size between messages for the
+ * mailbox type pointed to by ctx.
+ *
+ * mmdf and mbox add separators, which leads a small discrepancy when computing
+ * vsize for a limited view.
+ */
+int mx_msg_padding_size (CONTEXT *ctx)
+{
+  if (!ctx->mx_ops || !ctx->mx_ops->msg_padding_size)
+    return 0;
+
+  return ctx->mx_ops->msg_padding_size (ctx);
+}
+
+/* Writes a single header out to the header cache. */
+int mx_save_to_header_cache (CONTEXT *ctx, HEADER *h)
+{
+  if (!ctx->mx_ops || !ctx->mx_ops->save_to_header_cache)
+    return 0;
+
+  return ctx->mx_ops->save_to_header_cache (ctx, h);
 }
 
 /* vim: set sw=2: */

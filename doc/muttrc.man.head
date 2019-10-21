@@ -26,7 +26,7 @@
 .ft
 .fi
 ..
-.TH muttrc 5 "September 2002" Unix "User Manuals"
+.TH muttrc 5 "January 2019" Unix "User Manuals"
 .SH NAME
 muttrc \- Configuration file for the Mutt Mail User Agent
 .SH DESCRIPTION
@@ -221,8 +221,9 @@ This command binds the given \fIsequence\fP of keys to the given
 specify multiple maps, put only a comma between the maps.
 .PP
 .nf
-\fBcolor\fP \fIobject\fP \fIforeground\fP \fIbackground\fP [ \fIregexp\fP ]
-\fBcolor\fP index \fIforeground\fP \fIbackground\fP [ \fIpattern\fP ]
+\fBcolor\fP \fIobject\fP [ \fIattribute\fP ... ] \fIforeground\fP \fIbackground\fP [ \fIregexp\fP ]
+\fBcolor\fP index [ \fIattribute\fP ... ] \fIforeground\fP \fIbackground\fP [ \fIpattern\fP ]
+\fBcolor\fP compose \fIcomposeobject\fP [ \fIattribute\fP ... ] \fIforeground\fP \fIbackground\fP
 \fBuncolor\fP index \fIpattern\fP [ \fIpattern\fP ... ]
 .fi
 .IP
@@ -243,9 +244,17 @@ objects allow you to restrict the colorization to a regular
 expression.  The \fBindex\fP object permits you to select colored
 messages by pattern.
 .IP
+Valid composeobjects include
+.BR header ", " security_encrypt ", " security_sign ", "
+.BR security_both ", " security_none .
+.IP
 Valid colors include:
 .BR white ", " black ", " green ", " magenta ", " blue ", "
 .BR cyan ", " yellow ", " red ", " default ", " color\fIN\fP .
+.IP
+Valid attributes include:
+.BR none ", " bold ", " underline ", "
+.BR reverse ", and " standout .
 .PP
 .nf
 \fBmono\fP \fIobject\fP \fIattribute\fP [ \fIregexp\fP ]
@@ -253,9 +262,7 @@ Valid colors include:
 .fi
 .IP
 For terminals which don't support color, you can still assign
-attributes to objects.  Valid attributes include:
-.BR none ", " bold ", " underline ", " 
-.BR reverse ", and " standout .
+attributes to objects.
 .TP
 [\fBun\fP]\fBignore\fP \fIpattern\fP [ \fIpattern\fP ... ]
 The \fBignore\fP command permits you to specify header fields which
@@ -361,6 +368,16 @@ You may use multiple
 \fBcrypt-hook\fPs with the same \fIregexp\fP; multiple matching
 \fBcrypt-hook\fPs result in the use of multiple \fIkey-id\fPs for
 a recipient.
+.TP
+\fBindex-format-hook\fP \fIname\fP [\fB!\fP]\fIpattern\fP \fIformat-string\fP
+This command is used to inject format strings dynamically into
+$index_format based on pattern matching against the current message.
+.IP
+The $index_format expando \fI%@name@\fP specifies a placeholder for
+the injection. Index-format-hooks with the same \fIname\fP are matched
+using \fIpattern\fP against the current message. Matching is done in
+the order specified in the .muttrc, with the first match being
+used. The hook's \fIformat-string\fP is then substituted and evaluated.
 .PP
 .nf
 \fBopen-hook\fP \fIregexp\fP "\fIcommand\fP"
@@ -464,6 +481,11 @@ These commands allow the user to modify the list of allowed header
 fields in a \fImailto:\fP URL that Mutt will include in the
 the generated message.  By default the list contains only
 \fBsubject\fP and \fBbody\fP, as specified by RFC2368.
+.TP
+\fBecho\fP \fImessage\fP
+Prints \fImessage\fP to the message window. After printing the
+message, echo will pause for the number of seconds specified by
+$sleep_time.
 .SH PATTERNS
 .PP
 In various places with mutt, including some of the above mentioned
@@ -594,10 +616,10 @@ new messages
 old messages
 .TP
 ~p
-messages addressed to you (as defined by \fBalternates\fP)
+messages addressed to you (consults $from, \fBalternates\fP, and local account/hostname information)
 .TP
 ~P
-messages from you (as defined by \fBalternates\fP)
+messages from you (consults $from, \fBalternates\fP, and local account/hostname information)
 .TP
 ~Q
 messages which have been replied to
@@ -734,8 +756,11 @@ followed by a positive number, followed by one of the unit
 characters
 .BR y ,
 .BR m ,
-.BR w ", or"
-.BR d .
+.BR w ,
+.BR d ,
+.BR H ,
+.BR M ", or"
+.BR S .
 .B >
 matches dates which are older than the specified amount of time, an
 offset which begins with the character

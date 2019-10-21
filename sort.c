@@ -1,20 +1,20 @@
 /*
  * Copyright (C) 1996-2000 Michael R. Elkins <me@mutt.org>
- * 
+ *
  *     This program is free software; you can redistribute it and/or modify
  *     it under the terms of the GNU General Public License as published by
  *     the Free Software Foundation; either version 2 of the License, or
  *     (at your option) any later version.
- * 
+ *
  *     This program is distributed in the hope that it will be useful,
  *     but WITHOUT ANY WARRANTY; without even the implied warranty of
  *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *     GNU General Public License for more details.
- * 
+ *
  *     You should have received a copy of the GNU General Public License
  *     along with this program; if not, write to the Free Software
  *     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
- */ 
+ */
 
 #if HAVE_CONFIG_H
 # include "config.h"
@@ -29,19 +29,23 @@
 #include <ctype.h>
 #include <unistd.h>
 
-#define SORTCODE(x) (Sort & SORT_REVERSE) ? -(x) : x
+#define SORTCODE(x) ((option(OPTAUXSORT) ? SortAux : Sort) & SORT_REVERSE) ? -(x) : x
 
 /* function to use as discriminator when normal sort method is equal */
 static sort_t *AuxSort = NULL;
 static time_t Now;
 
-#define AUXSORT(code,a,b) if (!code && AuxSort && !option(OPTAUXSORT)) { \
-  set_option(OPTAUXSORT); \
-  code = AuxSort(a,b); \
-  unset_option(OPTAUXSORT); \
-} \
-if (!code) \
-  code = (*((HEADER **)a))->index - (*((HEADER **)b))->index;
+#define AUXSORT(code,a,b)                                       \
+  if (!code && AuxSort && !option(OPTAUXSORT))                  \
+  {                                                             \
+    set_option(OPTAUXSORT);                                     \
+    code = AuxSort(a,b);                                        \
+    unset_option(OPTAUXSORT);                                   \
+    if (code)                                                   \
+      return (code);                                            \
+  }                                                             \
+  if (!code)                                                    \
+    code = (*((HEADER **)a))->index - (*((HEADER **)b))->index;
 
 static int compare_score (const void *a, const void *b)
 {
@@ -211,8 +215,7 @@ static int compare_spam (const void *a, const void *b)
   if (result == 0)
   {
     result = strcmp(aptr, bptr);
-    if (result == 0)
-      AUXSORT(result, a, b);
+    AUXSORT(result, a, b);
   }
 
   return (SORTCODE(result));
@@ -316,7 +319,7 @@ void mutt_sort_headers (CONTEXT *ctx, int init)
   HEADER *h;
   THREAD *thread, *top;
   sort_t *sortfunc;
-  
+
   unset_option (OPTNEEDRESORT);
 
   if (!ctx)
@@ -329,6 +332,7 @@ void mutt_sort_headers (CONTEXT *ctx, int init)
      * in that routine, so we must make sure to zero the vcount member.
      */
     ctx->vcount = 0;
+    ctx->vsize = 0;
     mutt_clear_threads (ctx);
     return; /* nothing to do! */
   }
@@ -377,7 +381,7 @@ void mutt_sort_headers (CONTEXT *ctx, int init)
     mutt_sleep (1);
     return;
   }
-  else 
+  else
     qsort ((void *) ctx->hdrs, ctx->msgcount, sizeof (HEADER *), sortfunc);
 
   /* adjust the virtual message numbers */

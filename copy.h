@@ -1,20 +1,20 @@
 /*
  * Copyright (C) 1996-2000 Michael R. Elkins <me@mutt.org>
- * 
+ *
  *     This program is free software; you can redistribute it and/or modify
  *     it under the terms of the GNU General Public License as published by
  *     the Free Software Foundation; either version 2 of the License, or
  *     (at your option) any later version.
- * 
+ *
  *     This program is distributed in the hope that it will be useful,
  *     but WITHOUT ANY WARRANTY; without even the implied warranty of
  *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *     GNU General Public License for more details.
- * 
+ *
  *     You should have received a copy of the GNU General Public License
  *     along with this program; if not, write to the Free Software
  *     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
- */ 
+ */
 
 /* flags to _mutt_copy_message */
 #define MUTT_CM_NOHEADER        1       /* don't copy the message header */
@@ -54,7 +54,8 @@
 #define CH_UPDATE_REFS    (1<<17) /* update References: */
 #define CH_DISPLAY        (1<<18) /* display result to user */
 #define CH_UPDATE_LABEL   (1<<19) /* update X-Label: from hdr->env->x_label? */
-#define CH_UPDATE_EXPIRES (1<<20) /* update Expires: */
+#define CH_UPDATE_SUBJECT (1<<20) /* update Subject: protected header update */
+#define CH_UPDATE_EXPIRES (1<<21) /* update Expires: */
 
 
 int mutt_copy_hdr (FILE *, FILE *, LOFF_T, LOFF_T, int, const char *);

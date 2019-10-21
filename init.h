@@ -27,9 +27,10 @@
 #include "buffy.h"
 
 #ifndef _MAKEDOC
+/* If you add a data type, be sure to update doc/makedoc.c */
 #define DT_MASK		0x0f
 #define DT_BOOL		1 /* boolean option */
-#define DT_NUM		2 /* a number */
+#define DT_NUM		2 /* a number (short) */
 #define DT_STR		3 /* a string */
 #define DT_PATH		4 /* a pathname */
 #define DT_QUAD		5 /* quad-option (yes/no/ask-yes/ask-no) */
@@ -39,6 +40,7 @@
 #define DT_SYN		9 /* synonym for another variable */
 #define DT_ADDR	       10 /* e-mail address */
 #define DT_MBCHARTBL   11 /* multibyte char table */
+#define DT_LNUM        12 /* a number (long) */
 
 #define DTYPE(x) ((x) & DT_MASK)
 
@@ -299,6 +301,15 @@ struct option_t MuttVars[] = {
   ** customized by recipient or folder using hooks.  By default, Mutt
   ** will use your locale environment, so there is no need to set
   ** this except to override that default.
+  */
+  { "auto_subscribe",	DT_BOOL, R_NONE, OPTAUTOSUBSCRIBE, 0 },
+  /*
+  ** .pp
+  ** When \fIset\fP, Mutt assumes the presence of a List-Post header
+  ** means the recipient is subscribed to the list.  Unless the mailing list
+  ** is in the ``unsubscribe'' or ``unlist'' lists, it will be added
+  ** to the ``$subscribe'' list.  Parsing and checking these things slows
+  ** header reading down, so this option is disabled by default.
   */
   { "auto_tag",		DT_BOOL, R_NONE, OPTAUTOTAG, 0 },
   /*
@@ -577,6 +588,73 @@ struct option_t MuttVars[] = {
   ** be manually re-enabled in the pgp or smime menus.
   ** (Crypto only)
    */
+  { "crypt_protected_headers_read", DT_BOOL, R_NONE, OPTCRYPTPROTHDRSREAD, 1 },
+  /*
+  ** .pp
+  ** When set, Mutt will display protected headers ("Memory Hole") in the pager,
+  ** and will update the index and header cache with revised headers.
+  **
+  ** Protected headers are stored inside the encrypted or signed part of an
+  ** an email, to prevent disclosure or tampering.
+  ** For more information see https://github.com/autocrypt/memoryhole.
+  ** Currently Mutt only supports the Subject header.
+  ** .pp
+  ** Encrypted messages using protected headers often substitute the exposed
+  ** Subject header with a dummy value (see $$crypt_protected_headers_subject).
+  ** Mutt will update its concept of the correct subject \fBafter\fP the
+  ** message is opened, i.e. via the \fC<display-message>\fP function.
+  ** If you reply to a message before opening it, Mutt will end up using
+  ** the dummy Subject header, so be sure to open such a message first.
+  ** (Crypto only)
+   */
+  { "crypt_protected_headers_save", DT_BOOL, R_NONE, OPTCRYPTPROTHDRSSAVE, 0 },
+  /*
+  ** .pp
+  ** When $$crypt_protected_headers_read is set, and a message with a
+  ** protected Subject is opened, Mutt will save the updated Subject
+  ** into the header cache by default.  This allows searching/limiting
+  ** based on the protected Subject header if the mailbox is
+  ** re-opened, without having to re-open the message each time.
+  ** However, for mbox/mh mailbox types, or if header caching is not
+  ** set up, you would need to re-open the message each time the
+  ** mailbox was reopened before you could see or search/limit on the
+  ** protected subject again.
+  ** .pp
+  ** When this variable is set, Mutt additionally saves the protected
+  ** Subject back \fBin the clear-text message headers\fP.  This
+  ** provides better usability, but with the tradeoff of reduced
+  ** security.  The protected Subject header, which may have
+  ** previously been encrypted, is now stored in clear-text in the
+  ** message headers.  Copying the message elsewhere, via Mutt or
+  ** external tools, could expose this previously encrypted data.
+  ** Please make sure you understand the consequences of this before
+  ** you enable this variable.
+  ** (Crypto only)
+   */
+  { "crypt_protected_headers_subject", DT_STR, R_NONE, UL &ProtHdrSubject, UL "Encrypted subject" },
+  /*
+  ** .pp
+  ** When $$crypt_protected_headers_write is set, and the message is marked
+  ** for encryption, this will be substituted into the Subject field in the
+  ** message headers.
+  **
+  ** To prevent a subject from being substituted, unset this variable, or set it
+  ** to the empty string.
+  ** (Crypto only)
+   */
+  { "crypt_protected_headers_write", DT_BOOL, R_NONE, OPTCRYPTPROTHDRSWRITE, 0 },
+  /*
+  ** .pp
+  ** When set, Mutt will generate protected headers ("Memory Hole") for
+  ** signed and encrypted emails.
+  **
+  ** Protected headers are stored inside the encrypted or signed part of an
+  ** an email, to prevent disclosure or tampering.
+  ** For more information see https://github.com/autocrypt/memoryhole.
+  **
+  ** Currently Mutt only supports the Subject header.
+  ** (Crypto only)
+   */
   { "pgp_replyencrypt",		DT_SYN,  R_NONE, UL "crypt_replyencrypt", 1  },
   { "crypt_replyencrypt",	DT_BOOL, R_NONE, OPTCRYPTREPLYENCRYPT, 1 },
   /*
@@ -847,6 +925,20 @@ struct option_t MuttVars[] = {
   ** This variable controls whether or not attachments on outgoing messages
   ** are saved along with the main body of your message.
   */
+  { "fcc_before_send",	DT_BOOL, R_NONE, OPTFCCBEFORESEND, 0 },
+  /*
+  ** .pp
+  ** When this variable is \fIset\fP, FCCs will occur before sending
+  ** the message.  Before sending, the message cannot be manipulated,
+  ** so it will be stored the exact same as sent:
+  ** $$fcc_attach and $$fcc_clear will be ignored (using their default
+  ** values).
+  ** .pp
+  ** When \fIunset\fP, the default, FCCs will occur after sending.
+  ** Variables $$fcc_attach and $$fcc_clear will be respected, allowing
+  ** it to be stored without attachments or encryption/signing if
+  ** desired.
+  */
   { "fcc_clear",	DT_BOOL, R_NONE, OPTFCCCLEAR, 0 },
   /*
   ** .pp
@@ -934,6 +1026,15 @@ struct option_t MuttVars[] = {
   ** you are sending to even if that mailbox does not exist.
   ** .pp
   ** Also see the $$record variable.
+  */
+  { "forward_attachments", DT_QUAD, R_NONE, OPT_FORWATTS, MUTT_ASKYES },
+  /*
+  ** .pp
+  ** When forwarding inline (i.e. $$mime_forward \fIunset\fP or
+  ** answered with ``no'' and $$forward_decode \fIset\fP), attachments
+  ** which cannot be decoded in a reasonable manner will be attached
+  ** to the newly composed message if this quadoption is \fIset\fP or
+  ** answered with ``yes''.
   */
   { "forward_attribution_intro", DT_STR, R_NONE, UL &ForwardAttrIntro, UL "----- Forwarded message from %f -----" },
   /*
@@ -1257,12 +1358,24 @@ struct option_t MuttVars[] = {
   */
   { "imap_check_subscribed",  DT_BOOL, R_NONE, OPTIMAPCHECKSUBSCRIBED, 0 },
   /*
-   ** .pp
-   ** When \fIset\fP, mutt will fetch the set of subscribed folders from
-   ** your server on connection, and add them to the set of mailboxes
-   ** it polls for new mail just as if you had issued individual ``$mailboxes''
-   ** commands.
-   */
+  ** .pp
+  ** When \fIset\fP, mutt will fetch the set of subscribed folders from
+  ** your server on connection, and add them to the set of mailboxes
+  ** it polls for new mail just as if you had issued individual ``$mailboxes''
+  ** commands.
+  */
+  { "imap_condstore",  DT_BOOL, R_NONE, OPTIMAPCONDSTORE, 0 },
+  /*
+  ** .pp
+  ** When \fIset\fP, mutt will use the CONDSTORE extension (RFC 7162)
+  ** if advertised by the server.  Mutt's current implementation is basic,
+  ** used only for initial message fetching and flag updates.
+  ** .pp
+  ** For some IMAP servers, enabling this will slightly speed up
+  ** downloading initial messages.  Unfortunately, Gmail is not one
+  ** those, and displays worse performance when enabled.  Your
+  ** mileage may vary.
+  */
   { "imap_delim_chars",		DT_STR, R_NONE, UL &ImapDelimChars, UL "/." },
   /*
   ** .pp
@@ -1270,11 +1383,20 @@ struct option_t MuttVars[] = {
   ** as folder separators for displaying IMAP paths. In particular it
   ** helps in using the ``='' shortcut for your \fIfolder\fP variable.
   */
+  { "imap_fetch_chunk_size",	DT_LNUM, R_NONE, UL &ImapFetchChunkSize, 0 },
+  /*
+  ** .pp
+  ** When set to a value greater than 0, new headers will be downloaded
+  ** in sets of this size.  If you have a very large mailbox, this might
+  ** prevent a timeout and disconnect when opening the mailbox, by sending
+  ** a FETCH per set of this size instead of a single FETCH for all new
+  ** headers.
+  */
   { "imap_headers",	DT_STR, R_INDEX, UL &ImapHeaders, UL 0},
   /*
   ** .pp
   ** Mutt requests these header fields in addition to the default headers
-  ** (``Date:'', ``From:'', ``Subject:'', ``To:'', ``Cc:'', ``Message-Id:'',
+  ** (``Date:'', ``From:'', ``Sender:'', ``Subject:'', ``To:'', ``Cc:'', ``Message-Id:'',
   ** ``References:'', ``Content-Type:'', ``Content-Description:'', ``In-Reply-To:'',
   ** ``Reply-To:'', ``Lines:'', ``List-Post:'', ``X-Label:'') from IMAP
   ** servers before displaying the index menu. You may want to add more
@@ -1318,6 +1440,14 @@ struct option_t MuttVars[] = {
   ** .pp
   ** This variable defaults to the value of $$imap_user.
   */
+  { "imap_oauth_refresh_command", DT_STR, R_NONE, UL &ImapOauthRefreshCmd, UL "" },
+  /*
+  ** .pp
+  ** The command to run to generate an OAUTH refresh token for
+  ** authorizing your connection to your IMAP server.  This command will be
+  ** run on every connection attempt that uses the OAUTHBEARER authentication
+  ** mechanism.  See ``$oauth'' for details.
+  */
   { "imap_pass", 	DT_STR,  R_NONE, UL &ImapPass, UL 0 },
   /*
   ** .pp
@@ -1334,7 +1464,7 @@ struct option_t MuttVars[] = {
   ** .pp
   ** When \fIset\fP, mutt will not open new IMAP connections to check for new
   ** mail.  Mutt will only check for new mail over existing IMAP
-  ** connections.  This is useful if you don't want to be prompted to
+  ** connections.  This is useful if you don't want to be prompted for
   ** user/password pairs on mutt invocation, or if opening the connection
   ** is slow.
   */
@@ -1364,6 +1494,17 @@ struct option_t MuttVars[] = {
   ** that mutt will wait for a response when polling IMAP connections
   ** for new mail, before timing out and closing the connection.  Set
   ** to 0 to disable timing out.
+  */
+  { "imap_qresync",  DT_BOOL, R_NONE, OPTIMAPQRESYNC, 0 },
+  /*
+  ** .pp
+  ** When \fIset\fP, mutt will use the QRESYNC extension (RFC 7162)
+  ** if advertised by the server.  Mutt's current implementation is basic,
+  ** used only for initial message fetching and flag updates.
+  ** .pp
+  ** Note: this feature is currently experimental.  If you experience
+  ** strange behavior, such as duplicate or missing messages please
+  ** file a bug report to let us know.
   */
   { "imap_servernoise",		DT_BOOL, R_NONE, OPTIMAPSERVERNOISE, 1 },
   /*
@@ -1397,6 +1538,17 @@ struct option_t MuttVars[] = {
   ** .pp
   ** Controls whether or not a copy of the message(s) you are replying to
   ** is included in your reply.
+  */
+  { "include_encrypted",	DT_BOOL, R_NONE, OPTINCLUDEENCRYPTED, 0},
+  /*
+  ** .pp
+  ** Controls whether or not Mutt includes separately encrypted attachment
+  ** contents when replying.
+  ** .pp
+  ** This variable was added to prevent accidental exposure of encrypted
+  ** contents when replying to an attacker.  If a previously encrypted message
+  ** were attached by the attacker, they could trick an unwary recipient into
+  ** decrypting and including the message in their reply.
   */
   { "include_onlyfirst",	DT_BOOL, R_NONE, OPTINCLUDEONLYFIRST, 0},
   /*
@@ -1479,6 +1631,8 @@ struct option_t MuttVars[] = {
   **            the second is deleted or encryption flags (``D''/``d''/``S''/``P''/``s''/``K'').
   **            the third is either tagged/flagged (``\(as''/``!''), or one of the characters
   **            listed in $$to_chars.
+  ** .dt %@name@ .dd insert and evaluate format-string from the matching
+  **                 ``$index-format-hook'' command
   ** .dt %{fmt} .dd the date and time of the message is converted to sender's
   **                time zone, and ``fmt'' is expanded by the library function
   **                \fCstrftime(3)\fP; a leading bang disables locales
@@ -1504,7 +1658,13 @@ struct option_t MuttVars[] = {
   ** rightward text.
   ** .pp
   ** Note that these expandos are supported in
-  ** ``$save-hook'', ``$fcc-hook'' and ``$fcc-save-hook'', too.
+  ** ``$save-hook'', ``$fcc-hook'', ``$fcc-save-hook'', and
+  ** ``$index-format-hook''.
+  ** .pp
+  ** They are also supported in the configuration variables $$attribution,
+  ** $$forward_attribution_intro, $$forward_attribution_trailer,
+  ** $$forward_format, $$indent_string, $$message_format, $$pager_format,
+  ** and $$post_indent_string.
   */
   { "ispell",		DT_PATH, R_NONE, UL &Ispell, UL ISPELL },
   /*
@@ -1544,6 +1704,10 @@ struct option_t MuttVars[] = {
   ** this operation is more performance intensive, it defaults to
   ** \fIunset\fP, and has a separate option, $$mail_check_stats_interval, to
   ** control how often to update these counts.
+  ** .pp
+  ** Message statistics can also be explicitly calculated by invoking the
+  ** \fC<check-stats>\fP
+  ** function.
   */
   { "mail_check_stats_interval", DT_NUM, R_NONE, UL &BuffyCheckStatsInterval, 60 },
   /*
@@ -1555,7 +1719,8 @@ struct option_t MuttVars[] = {
   /*
   ** .pp
   ** This variable specifies which files to consult when attempting to
-  ** display MIME bodies not directly supported by Mutt.
+  ** display MIME bodies not directly supported by Mutt.  The default value
+  ** is generated during startup: see the ``$mailcap'' section of the manual.
   */
   { "mailcap_sanitize",	DT_BOOL, R_NONE, OPTMAILCAPSANITIZE, 1 },
   /*
@@ -1832,13 +1997,13 @@ struct option_t MuttVars[] = {
 #ifdef USE_SOCKET
   { "net_inc",	DT_NUM,	 R_NONE, UL &NetInc, 10 },
   /*
-   ** .pp
-   ** Operations that expect to transfer a large amount of data over the
-   ** network will update their progress every $$net_inc kilobytes.
-   ** If set to 0, no progress messages will be displayed.
-   ** .pp
-   ** See also $$read_inc, $$write_inc and $$net_inc.
-   */
+  ** .pp
+  ** Operations that expect to transfer a large amount of data over the
+  ** network will update their progress every $$net_inc kilobytes.
+  ** If set to 0, no progress messages will be displayed.
+  ** .pp
+  ** See also $$read_inc, $$write_inc and $$net_inc.
+  */
 #endif
   { "new_mail_command",	DT_PATH, R_NONE, UL &NewMailCmd, 0 },
   /*
@@ -1859,6 +2024,9 @@ struct option_t MuttVars[] = {
   ** keystrokes are necessary because you can't call mutt functions
   ** directly from the pager, and screen resizes cause lines longer than
   ** the screen width to be badly formatted in the help menu.
+  ** .pp
+  ** When using an external pager, also see $$prompt_after which defaults
+  ** \fIset\fP.
   */
   { "pager_context",	DT_NUM,	 R_NONE, UL &PagerContext, 0 },
   /*
@@ -2120,7 +2288,7 @@ struct option_t MuttVars[] = {
   ** gpg --list-keys --with-colons --with-fingerprint
   ** .te
   ** .pp
-  ** This format is also generated by the \fCpgpring\fP utility which comes
+  ** This format is also generated by the \fCmutt_pgpring\fP utility which comes
   ** with mutt.
   ** .pp
   ** Note: gpg's \fCfixed-list-mode\fP option should not be used.  It
@@ -2129,6 +2297,8 @@ struct option_t MuttVars[] = {
   ** .pp
   ** This is a format string, see the $$pgp_decode_command command for
   ** possible \fCprintf(3)\fP-like sequences.
+  ** Note that in this case, %r expands to the search string, which is a list of
+  ** one or more quoted values such as email address, name, or keyid.
   ** (PGP only)
   */
   { "pgp_list_secring_command",	DT_STR, R_NONE, UL &PgpListSecringCommand, 0},
@@ -2140,7 +2310,7 @@ struct option_t MuttVars[] = {
   ** gpg --list-keys --with-colons --with-fingerprint
   ** .te
   ** .pp
-  ** This format is also generated by the \fCpgpring\fP utility which comes
+  ** This format is also generated by the \fCmutt_pgpring\fP utility which comes
   ** with mutt.
   ** .pp
   ** Note: gpg's \fCfixed-list-mode\fP option should not be used.  It
@@ -2149,6 +2319,8 @@ struct option_t MuttVars[] = {
   ** .pp
   ** This is a format string, see the $$pgp_decode_command command for
   ** possible \fCprintf(3)\fP-like sequences.
+  ** Note that in this case, %r expands to the search string, which is a list of
+  ** one or more quoted values such as email address, name, or keyid.
   ** (PGP only)
   */
   { "pgp_long_ids",	DT_BOOL, R_NONE, OPTPGPLONGIDS, 1 },
@@ -2265,19 +2437,31 @@ struct option_t MuttVars[] = {
   ** this if you know what you are doing.
   ** (PGP only)
   */
-  { "pgp_timeout",	DT_NUM,	 R_NONE, UL &PgpTimeout, 300 },
+  { "pgp_timeout",	DT_LNUM,	 R_NONE, UL &PgpTimeout, 300 },
   /*
   ** .pp
   ** The number of seconds after which a cached passphrase will expire if
   ** not used.
   ** (PGP only)
   */
-  { "pgp_use_gpg_agent", DT_BOOL, R_NONE, OPTUSEGPGAGENT, 0},
+  { "pgp_use_gpg_agent", DT_BOOL, R_NONE, OPTUSEGPGAGENT, 1},
   /*
   ** .pp
-  ** If \fIset\fP, mutt will use a possibly-running \fCgpg-agent(1)\fP process.
-  ** Note that as of version 2.1, GnuPG no longer exports GPG_AGENT_INFO, so
-  ** mutt no longer verifies if the agent is running.
+  ** If \fIset\fP, mutt expects a \fCgpg-agent(1)\fP process will handle
+  ** private key passphrase prompts.  If \fIunset\fP, mutt will prompt
+  ** for the passphrase and pass it via stdin to the pgp command.
+  ** .pp
+  ** Note that as of version 2.1, GnuPG automatically spawns an agent
+  ** and requires the agent be used for passphrase management.  Since
+  ** that version is increasingly prevalent, this variable now
+  ** defaults \fIset\fP.
+  ** .pp
+  ** Mutt works with a GUI or curses pinentry program.  A TTY pinentry
+  ** should not be used.
+  ** .pp
+  ** If you are using an older version of GnuPG without an agent running,
+  ** or another encryption program without an agent, you will need to
+  ** \fIunset\fP this variable.
   ** (PGP only)
   */
   { "pgp_verify_command", 	DT_STR, R_NONE, UL &PgpVerifyCommand, 0},
@@ -2379,6 +2563,14 @@ struct option_t MuttVars[] = {
   ** for retrieving only unread messages from the POP server when using
   ** the \fC$<fetch-mail>\fP function.
   */
+  { "pop_oauth_refresh_command", DT_STR, R_NONE, UL &PopOauthRefreshCmd, UL "" },
+  /*
+  ** .pp
+  ** The command to run to generate an OAUTH refresh token for
+  ** authorizing your connection to your POP server.  This command will be
+  ** run on every connection attempt that uses the OAUTHBEARER authentication
+  ** mechanism.  See ``$oauth'' for details.
+  */
   { "pop_pass",		DT_STR,	 R_NONE, UL &PopPass, UL "" },
   /*
   ** .pp
@@ -2408,6 +2600,8 @@ struct option_t MuttVars[] = {
   ** .pp
   ** Similar to the $$attribution variable, Mutt will append this
   ** string after the inclusion of a message which is being replied to.
+  ** For a full listing of defined \fCprintf(3)\fP-like sequences see
+  ** the section on $$index_format.
   */
   { "post_indent_str",  DT_SYN,  R_NONE, UL "post_indent_string", 0 },
   /*
@@ -2618,7 +2812,7 @@ struct option_t MuttVars[] = {
   ** command to create a ``Bcc:'' field with your email address in it.)
   ** .pp
   ** The value of \fI$$record\fP is overridden by the $$force_name and
-  ** $$save_name variables, and the ``$fcc-hook'' command.
+  ** $$save_name variables, and the ``$fcc-hook'' command.  Also see $$copy.
   */
   { "reflow_space_quotes",	DT_BOOL, R_NONE, OPTREFLOWSPACEQUOTES, 1 },
   /*
@@ -2742,15 +2936,22 @@ struct option_t MuttVars[] = {
   ** used doesn't match your ``$alternates'', the \fIFrom:\fP line will use
   ** your address on the current machine.
   ** .pp
-  ** Also see the ``$alternates'' command.
+  ** Also see the ``$alternates'' command and $$reverse_realname.
   */
   { "reverse_realname",	DT_BOOL, R_BOTH, OPTREVREAL, 1 },
   /*
   ** .pp
   ** This variable fine-tunes the behavior of the $$reverse_name feature.
-  ** When it is \fIset\fP, mutt will use the address from incoming messages as-is,
-  ** possibly including eventual real names.  When it is \fIunset\fP, mutt will
-  ** override any such real names with the setting of the $$realname variable.
+  ** .pp
+  ** When it is \fIunset\fP, Mutt will remove the real name part of a
+  ** matching address.  This allows the use of the email address
+  ** without having to also use what the sender put in the real name
+  ** field.
+  ** .pp
+  ** When it is \fIset\fP, Mutt will use the matching address as-is.
+  ** .pp
+  ** In either case, a missing real name will be filled in afterwards
+  ** using the value of $$realname.
   */
   { "rfc2047_parameters", DT_BOOL, R_NONE, OPTRFC2047PARAMS, 0 },
   /*
@@ -3306,7 +3507,7 @@ struct option_t MuttVars[] = {
   ** possible \fCprintf(3)\fP-like sequences.
   ** (S/MIME only)
   */
-  { "smime_timeout",		DT_NUM,	 R_NONE, UL &SmimeTimeout, 300 },
+  { "smime_timeout",		DT_LNUM,	 R_NONE, UL &SmimeTimeout, 300 },
   /*
   ** .pp
   ** The number of seconds after which a cached passphrase will expire if
@@ -3333,7 +3534,6 @@ struct option_t MuttVars[] = {
   ** (S/MIME only)
   */
 #ifdef USE_SMTP
-# ifdef USE_SASL
   { "smtp_authenticators", DT_STR, R_NONE, UL &SmtpAuthenticators, UL 0 },
   /*
   ** .pp
@@ -3350,7 +3550,14 @@ struct option_t MuttVars[] = {
   ** set smtp_authenticators="digest-md5:cram-md5"
   ** .te
   */
-# endif /* USE_SASL */
+  { "smtp_oauth_refresh_command", DT_STR, R_NONE, UL &SmtpOauthRefreshCmd, UL "" },
+  /*
+  ** .pp
+  ** The command to run to generate an OAUTH refresh token for
+  ** authorizing your connection to your SMTP server.  This command will be
+  ** run on every connection attempt that uses the OAUTHBEARER authentication
+  ** mechanism.  See ``$oauth'' for details.
+  */
   { "smtp_pass", 	DT_STR,  R_NONE, UL &SmtpPass, UL 0 },
   /*
   ** .pp
@@ -3411,6 +3618,9 @@ struct option_t MuttVars[] = {
   { "sort_aux",		DT_SORT|DT_SORT_AUX, R_INDEX|R_RESORT_BOTH, UL &SortAux, SORT_DATE },
   /*
   ** .pp
+  ** This provides a secondary sort for messages in the ``index'' menu, used
+  ** when the $$sort value is equal for two messages.
+  ** .pp
   ** When sorting by threads, this variable controls how threads are sorted
   ** in relation to other threads, and how the branches of the thread trees
   ** are sorted.  This can be set to any value that $$sort can, except
@@ -3427,8 +3637,8 @@ struct option_t MuttVars[] = {
   ** thread, that thread becomes the last one displayed (or the first, if
   ** you have ``\fCset sort=reverse-threads\fP''.)
   ** .pp
-  ** Note: For reversed $$sort
-  ** order $$sort_aux is reversed again (which is not the right thing to do,
+  ** Note: For reversed-threads $$sort
+  ** order, $$sort_aux is reversed again (which is not the right thing to do,
   ** but kept to not break any existing configuration setting).
   */
   { "sort_browser",	DT_SORT|DT_SORT_BROWSER, R_NONE, UL &BrowserSort, SORT_ALPHA },
@@ -3505,13 +3715,13 @@ struct option_t MuttVars[] = {
   */
   { "ssl_force_tls",		DT_BOOL, R_NONE, OPTSSLFORCETLS, 0 },
   /*
-   ** .pp
-   ** If this variable is \fIset\fP, Mutt will require that all connections
-   ** to remote servers be encrypted. Furthermore it will attempt to
-   ** negotiate TLS even if the server does not advertise the capability,
-   ** since it would otherwise have to abort the connection anyway. This
-   ** option supersedes $$ssl_starttls.
-   */
+  ** .pp
+  ** If this variable is \fIset\fP, Mutt will require that all connections
+  ** to remote servers be encrypted. Furthermore it will attempt to
+  ** negotiate TLS even if the server does not advertise the capability,
+  ** since it would otherwise have to abort the connection anyway. This
+  ** option supersedes $$ssl_starttls.
+  */
 # ifdef USE_SSL_GNUTLS
   { "ssl_min_dh_prime_bits", DT_NUM, R_NONE, UL &SslDHPrimeBits, 0 },
   /*
@@ -3532,36 +3742,38 @@ struct option_t MuttVars[] = {
   { "ssl_use_sslv2", DT_BOOL, R_NONE, OPTSSLV2, 0 },
   /*
   ** .pp
-  ** This variable specifies whether to attempt to use SSLv2 in the
-  ** SSL authentication process. Note that SSLv2 and SSLv3 are now
-  ** considered fundamentally insecure and are no longer recommended.
+  ** If \fIset\fP , Mutt will use SSLv2 when communicating with servers that
+  ** request it. \fBN.B. As of 2011, SSLv2 is considered insecure, and using
+  ** is inadvisable. See https://tools.ietf.org/html/rfc6176 .\fP
   ** (OpenSSL only)
   */
 # endif /* defined USE_SSL_OPENSSL */
   { "ssl_use_sslv3", DT_BOOL, R_NONE, OPTSSLV3, 0 },
   /*
   ** .pp
-  ** This variable specifies whether to attempt to use SSLv3 in the
-  ** SSL authentication process. Note that SSLv2 and SSLv3 are now
-  ** considered fundamentally insecure and are no longer recommended.
+  ** If \fIset\fP , Mutt will use SSLv3 when communicating with servers that
+  ** request it. \fBN.B. As of 2015, SSLv3 is considered insecure, and using
+  ** it is inadvisable. See https://tools.ietf.org/html/rfc7525 .\fP
   */
-  { "ssl_use_tlsv1", DT_BOOL, R_NONE, OPTTLSV1, 1 },
+  { "ssl_use_tlsv1", DT_BOOL, R_NONE, OPTTLSV1, 0 },
   /*
   ** .pp
-  ** This variable specifies whether to attempt to use TLSv1.0 in the
-  ** SSL authentication process.
+  ** If \fIset\fP , Mutt will use TLSv1.0 when communicating with servers that
+  ** request it. \fBN.B. As of 2015, TLSv1.0 is considered insecure, and using
+  ** it is inadvisable. See https://tools.ietf.org/html/rfc7525 .\fP
   */
-  { "ssl_use_tlsv1_1", DT_BOOL, R_NONE, OPTTLSV1_1, 1 },
+  { "ssl_use_tlsv1_1", DT_BOOL, R_NONE, OPTTLSV1_1, 0 },
   /*
   ** .pp
-  ** This variable specifies whether to attempt to use TLSv1.1 in the
-  ** SSL authentication process.
+  ** If \fIset\fP , Mutt will use TLSv1.1 when communicating with servers that
+  ** request it. \fBN.B. As of 2015, TLSv1.1 is considered insecure, and using
+  ** it is inadvisable. See https://tools.ietf.org/html/rfc7525 .\fP
   */
   { "ssl_use_tlsv1_2", DT_BOOL, R_NONE, OPTTLSV1_2, 1 },
   /*
   ** .pp
-  ** This variable specifies whether to attempt to use TLSv1.2 in the
-  ** SSL authentication process.
+  ** If \fIset\fP , Mutt will use TLSv1.2 when communicating with servers that
+  ** request it.
   */
 #ifdef USE_SSL_OPENSSL
   { "ssl_usesystemcerts", DT_BOOL, R_NONE, OPTSSLSYSTEMCERTS, 1 },
@@ -3900,17 +4112,17 @@ struct option_t MuttVars[] = {
   */
   { "use_envelope_from", 	DT_BOOL, R_NONE, OPTENVFROM, 0 },
   /*
-   ** .pp
-   ** When \fIset\fP, mutt will set the \fIenvelope\fP sender of the message.
-   ** If $$envelope_from_address is \fIset\fP, it will be used as the sender
-   ** address. If \fIunset\fP, mutt will attempt to derive the sender from the
-   ** ``From:'' header.
-   ** .pp
-   ** Note that this information is passed to sendmail command using the
-   ** \fC-f\fP command line switch. Therefore setting this option is not useful
-   ** if the $$sendmail variable already contains \fC-f\fP or if the
-   ** executable pointed to by $$sendmail doesn't support the \fC-f\fP switch.
-   */
+  ** .pp
+  ** When \fIset\fP, mutt will set the \fIenvelope\fP sender of the message.
+  ** If $$envelope_from_address is \fIset\fP, it will be used as the sender
+  ** address. If \fIunset\fP, mutt will attempt to derive the sender from the
+  ** ``From:'' header.
+  ** .pp
+  ** Note that this information is passed to sendmail command using the
+  ** \fC-f\fP command line switch. Therefore setting this option is not useful
+  ** if the $$sendmail variable already contains \fC-f\fP or if the
+  ** executable pointed to by $$sendmail doesn't support the \fC-f\fP switch.
+  */
   { "envelope_from",	DT_SYN,  R_NONE, UL "use_envelope_from", 0 },
   /*
   */
@@ -4193,6 +4405,7 @@ const struct command_t Commands[] = {
   { "iconv-hook",	mutt_parse_hook,	MUTT_ICONVHOOK },
 #endif
   { "ignore",		parse_ignore,		0 },
+  { "index-format-hook",mutt_parse_idxfmt_hook, MUTT_IDXFMTHOOK },
   { "lists",		parse_lists,		0 },
   { "macro",		mutt_parse_macro,	0 },
   { "mailboxes",	mutt_parse_mailboxes,	MUTT_MAILBOXES },

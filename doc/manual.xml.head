@@ -220,7 +220,7 @@ denote that the argument may be repeated arbitrary times.
 <title>Copyright</title>
 
 <para>
-Mutt is Copyright &copy; 1996-2018 Michael R. Elkins
+Mutt is Copyright &copy; 1996-2019 Michael R. Elkins
 <email>me@mutt.org</email> and others.
 </para>
 
@@ -334,7 +334,7 @@ per-folder basis and much more.
 
 <para>
 Besides an interactive mode, Mutt can also be used as a command-line
-tool only send messages. It also supports a
+tool to send messages. It also supports a
 <literal>mailx(1)</literal>-compatible interface, see <xref
 linkend="tab-commandline-options"/> for a complete list of command-line
 options.
@@ -401,6 +401,14 @@ sorting of items, limiting the items shown by a regular expression and a
 freely adjustable format of what to display in which way. It also allows
 for easy navigation through the file system when selecting file(s) to
 attach to a message, select multiple files to attach and many more.
+</para>
+
+<para>
+Some mail systems can nest mail folders inside other mail folders.
+The normal open entry commands in mutt will open the mail folder and
+you can't see the sub-folders.  If you instead use the
+<literal>&lt;descend-directory&gt;</literal> function it will go into
+the directory and not open it as a mail directory.
 </para>
 
 </sect2>
@@ -922,6 +930,56 @@ and <emphasis>pager</emphasis> modes as shown in
 </table>
 
 <para>
+In the <emphasis>index</emphasis>, the subject of threaded children
+messages will be prepended with thread tree characters.  By default,
+the subject itself will not be duplicated unless <link
+linkend="hide-thread-subject">$hide_thread_subject</link> is unset.
+Special characters will be added to the thread tree as detailed in
+<xref linkend="tab-thread-chars"/>.
+</para>
+
+<table id="tab-thread-chars">
+  <title>Special Thread Characters</title>
+  <tgroup cols="3">
+    <thead>
+      <row>
+        <entry>Character</entry>
+        <entry>Description</entry>
+        <entry>Notes</entry>
+      </row>
+    </thead>
+    <tbody>
+      <row>
+        <entry>&amp;</entry>
+        <entry>hidden message</entry>
+        <entry>see <link linkend="hide-limited">$hide_limited</link> and
+        <link linkend="hide-top-limited">$hide_top_limited</link></entry>
+      </row>
+      <row>
+        <entry>?</entry>
+        <entry>missing message</entry>
+        <entry>see <link linkend="hide-missing">$hide_missing</link> and
+        <link linkend="hide-top-missing">$hide_top_missing</link></entry>
+      </row>
+      <row>
+        <entry>*</entry>
+        <entry>pseudo thread</entry>
+        <entry>see <link linkend="strict-threads">$strict_threads</link>;
+        not displayed when
+        <link linkend="narrow-tree">$narrow_tree</link> is set</entry>
+      </row>
+      <row>
+        <entry>=</entry>
+        <entry>duplicate thread</entry>
+        <entry>see <link linkend="duplicate-threads">$duplicate_threads</link>;
+        not displayed when
+        <link linkend="narrow-tree">$narrow_tree</link> is set</entry>
+      </row>
+    </tbody>
+  </tgroup>
+</table>
+
+<para>
 Collapsing a thread displays only the first message in the thread and
 hides the others. This is useful when threads contain so many messages
 that you can only see a handful of threads on the screen. See %M in
@@ -952,6 +1010,20 @@ In addition, the <emphasis>index</emphasis> and
 </para>
 
 <variablelist>
+
+<varlistentry>
+<term>
+<literal>&lt;check-stats&gt;</literal><anchor id="check-stats"/>
+</term>
+<listitem>
+<para>
+Calculate statistics for all monitored mailboxes declared using the
+<command>mailboxes</command> command.
+It will calculate statistics despite
+<link linkend="mail-check-stats">$mail_check_stats</link> being unset.
+</para>
+</listitem>
+</varlistentry>
 
 <varlistentry>
 <term>
@@ -1211,6 +1283,7 @@ new message.
 <row><entry>m</entry><entry><literal>&lt;compose&gt;</literal></entry><entry>compose a new message</entry></row>
 <row><entry>r</entry><entry><literal>&lt;reply&gt;</literal></entry><entry>reply to sender</entry></row>
 <row><entry>g</entry><entry><literal>&lt;group-reply&gt;</literal></entry><entry>reply to all recipients</entry></row>
+<row><entry></entry><entry><literal>&lt;group-chat-reply&gt;</literal></entry><entry>reply to all recipients preserving To/Cc</entry></row>
 <row><entry>L</entry><entry><literal>&lt;list-reply&gt;</literal></entry><entry>reply to mailing list address</entry></row>
 <row><entry>f</entry><entry><literal>&lt;forward&gt;</literal></entry><entry>forward message</entry></row>
 <row><entry>b</entry><entry><literal>&lt;bounce&gt;</literal></entry><entry>bounce (remail) message</entry></row>
@@ -1261,8 +1334,20 @@ Reply to the author directly.
 <term>Group reply</term>
 <listitem>
 <para>
-Reply to the author as well to all recipients except you; this consults
-<link linkend="alternates"><command>alternates</command></link>.
+Reply to the author; cc all other recipients; consults
+<link linkend="alternates"><command>alternates</command></link>
+and excludes you.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>Group Chat reply</term>
+<listitem>
+<para>
+Reply to the author and other recipients in the To list;
+cc other recipients in the Cc list; consults
+<link linkend="alternates"><command>alternates</command></link>
+and excludes you.
 </para>
 </listitem>
 </varlistentry>
@@ -1704,6 +1789,18 @@ quadoption which, for example, can be set to <quote>ask-no</quote>.
 </para>
 
 <para>
+Mutt's default (<link
+linkend="mime-forward">$mime_forward</link>=<quote>no</quote> and
+<link
+linkend="forward-decode">$forward_decode</link>=<quote>yes</quote>) is
+to use standard inline forwarding.  In that mode all text-decodable
+parts are included in the new message body.  Other attachments from
+the original email can also be attached to the new message, based on the
+quadoption <link
+linkend="forward-attachments">$forward_attachments</link>.
+</para>
+
+<para>
 The inclusion of headers is controlled by the current setting of the
 <link linkend="weed">$weed</link> variable, unless <link
 linkend="mime-forward">$mime_forward</link> is set.
@@ -1711,7 +1808,8 @@ linkend="mime-forward">$mime_forward</link> is set.
 
 <para>
 Editing the message to forward follows the same procedure as sending or
-replying to a message does.
+replying to a message does, but can be disabled via the quadoption
+<link linkend="forward-edit">$forward_edit</link>.
 </para>
 
 </sect1>
@@ -1752,6 +1850,101 @@ status of the message to be updated.
 <para>
 See also the <link linkend="postpone">$postpone</link> quad-option.
 </para>
+
+</sect1>
+
+<sect1 id="encryption">
+<title>Encryption and Signing</title>
+
+<para>
+OpenPGP and S/MIME are enabled in one of two ways: <quote>classic
+mode</quote> or GPGME.  The former invokes external programs to
+perform the various operations; it is better tested and more
+flexible, but requires some configuration.  The latter uses the
+GnuPG project's GPGME library.
+</para>
+
+<para>
+To enable <quote>classic mode</quote>, ensure GPGME is disabled and
+use the <literal>gpg.rc</literal> or <literal>smime.rc</literal> files
+that come with mutt.  These are typically installed under
+<literal>/usr/local/share/doc/mutt/samples/</literal>.  Source them, either
+directly or by copying them to your .mutt directory and sourcing them.
+Sourcing them directly from
+<literal>/usr/local/share/doc/mutt/samples/</literal> has the benefit of
+automatically using fixes and security improvements to the command
+invocations, and is recommended.
+</para>
+
+<screen>
+unset crypt_use_gpgme
+source /usr/local/share/doc/mutt/samples/gpg.rc
+source /usr/local/share/doc/mutt/samples/smime.rc
+</screen>
+
+<para>
+To use GPGME instead, simply ensure the option is enabled in your .muttrc:
+</para>
+
+<screen>
+set crypt_use_gpgme
+</screen>
+
+<sect2 id="enc-pgp">
+<title>OpenPGP Configuration</title>
+
+<para>
+The two most important settings are <link
+linkend="pgp-default-key">$pgp_default_key</link> and <link
+linkend="pgp-sign-as">$pgp_sign_as</link>.  To perform encryption, you
+must set the first variable.  If you have a separate signing key, or
+only have a signing key, then set the second.  Most people will only
+need to set <link linkend="pgp-default-key">$pgp_default_key</link>.
+</para>
+
+<para>
+Starting with version 2.1.0, GnuPG automatically uses an
+<literal>agent</literal> to prompt for your passphrase.  If you are
+using a version older than that, you'll need to ensure an agent is
+running (alternatively, you can unset <link
+linkend="pgp-use-gpg-agent">$pgp_use_gpg_agent</link> and Mutt will
+prompt you for your passphrase).  The agent in turn uses a
+<literal>pinentry</literal> program to display the prompt.  There are
+many different kinds of pinentry programs that can be used: qt, gtk2,
+gnome3, fltk, and curses.  However, Mutt does <emphasis>not</emphasis>
+work properly with the tty pinentry program.  Please ensure you have
+one of the GUI or curses pinentry programs installed and configured to
+be the default for your system.
+</para>
+</sect2>
+
+<sect2 id="enc-smime">
+<title>S/MIME Configuration</title>
+
+<para>
+As with OpenPGP, the two most important settings are <link
+linkend="smime-default-key">$smime_default_key</link> and <link
+linkend="smime-sign-as">$smime_sign_as</link>.  To perform encryption
+and decryption, you must set the first variable.  If you have a
+separate signing key, or only have a signing key, then set the second.
+Most people will only need to set <link
+linkend="smime-default-key">$smime_default_key</link>.
+</para>
+
+<para>
+In <quote>classic mode</quote>, keys and certificates are managed by
+the <literal>smime_keys</literal> program that comes with Mutt.  By
+default they are stored under <literal>~/.smime/</literal>. (This is
+set by the <literal>smime.rc</literal> file with <link
+linkend="smime-certificates">$smime_certificates</link> and <link
+linkend="smime-keys">$smime_keys</link>.)  To initialize this
+directory, use the command <quote><literal>smime_keys
+init</literal></quote> from a shell prompt.  The program can be then
+be used to import and list certificates.  You may also want to
+periodically run <quote><literal>smime_keys refresh</literal></quote>
+to update status flags for your certificates.
+</para>
+</sect2>
 
 </sect1>
 
@@ -1799,6 +1992,21 @@ linkend="commandline">command line</link> switch or using the
 <literal>show-version</literal> key (default: V) from the index menu.
 </para>
 
+</sect1>
+
+<sect1 id="quickconfig">
+<title>Starter Muttrc</title>
+
+<para>
+Mutt is highly configurable because it's <emphasis>meant</emphasis> to
+be customized to your needs and preferences.  However, this
+configurability can make it difficult when just getting started.  A
+few sample muttrc files come with mutt, under
+<literal>doc/mutt/samples/</literal>.  Among them, <ulink
+url="https://gitlab.com/muttmua/mutt/tree/master/contrib/sample.muttrc-starter"
+>sample.muttrc-starter</ulink> is a basic example config with a few
+suggested settings and pointers to useful programs.
+</para>
 </sect1>
 
 <sect1 id="muttrc-syntax" xreflabel="Syntax of Initialization Files">
@@ -1894,6 +2102,22 @@ line of output from the Unix command will be substituted.
 <title>Using external command's output in configuration files</title>
 <screen>
 my_hdr X-Operating-System: `uname -a`
+</screen>
+</example>
+
+<para>
+To avoid the output of backticks being parsed, place them inside
+double quotes.  In <xref linkend="ex-backtick-dblquotes"/>, the output
+of the gpg decryption is assigned directly to $imap_pass, so that
+special characters in the password (e.g.<quote>'</quote>,
+<quote>#</quote>, <quote>$</quote>) are not parsed and interpreted
+specially by mutt.
+</para>
+
+<example id="ex-backtick-dblquotes">
+<title>Preventing the output of backticks from being parsed</title>
+<screen>
+set imap_pass="`gpg --batch -q --decrypt ~/.mutt/account.gpg`"
 </screen>
 </example>
 
@@ -2131,12 +2355,21 @@ the named <emphasis>group</emphasis>.
 </para>
 
 <para>
-To remove an alias or aliases (<quote>*</quote> means all aliases):
+To add an alias:
 </para>
 
 <screen>
 alias muttdude me@cs.hmc.edu (Michael Elkins)
 alias theguys manny, moe, jack
+</screen>
+
+<para>
+To remove an alias or aliases (<quote>*</quote> means all aliases):
+</para>
+
+<screen>
+unalias muttdude
+unalias *
 </screen>
 
 <para>
@@ -2441,7 +2674,7 @@ specified key sequence.
 <replaceable class="parameter">charset</replaceable>
 </arg>
 
-<command>iconv-hook<anchor id="iconv-hook"/></command>
+<command>iconv-hook</command>
 <arg choice="plain">
 <replaceable class="parameter">charset</replaceable>
 </arg>
@@ -2636,6 +2869,9 @@ silently truncated at the screen width, and are not wrapped.
 <arg choice="plain">
 <replaceable class="parameter">object</replaceable>
 </arg>
+<arg choice="opt" rep="repeat">
+<replaceable class="parameter">attribute</replaceable>
+</arg>
 <arg choice="plain">
 <replaceable class="parameter">foreground</replaceable>
 </arg>
@@ -2652,6 +2888,9 @@ silently truncated at the screen width, and are not wrapped.
 <option>body</option>
 </arg>
 </group>
+<arg choice="opt" rep="repeat">
+<replaceable class="parameter">attribute</replaceable>
+</arg>
 <arg choice="plain">
 <replaceable class="parameter">foreground</replaceable>
 </arg>
@@ -2665,6 +2904,9 @@ silently truncated at the screen width, and are not wrapped.
 <command>color</command>
 <arg choice="plain">
 <option>index</option>
+</arg>
+<arg choice="opt" rep="repeat">
+<replaceable class="parameter">attribute</replaceable>
 </arg>
 <arg choice="plain">
 <replaceable class="parameter">foreground</replaceable>
@@ -2682,6 +2924,9 @@ silently truncated at the screen width, and are not wrapped.
 </arg>
 <arg choice="plain">
 <replaceable class="parameter">composeobject</replaceable>
+</arg>
+<arg choice="opt" rep="repeat">
+<replaceable class="parameter">attribute</replaceable>
 </arg>
 <arg choice="plain">
 <replaceable class="parameter">foreground</replaceable>
@@ -2722,11 +2967,11 @@ specify one or the other).
 
 <para>
 <emphasis>header</emphasis> and <emphasis>body</emphasis> match
-<emphasis>regexp</emphasis> in the header/body of a message,
-<emphasis>index</emphasis> matches <emphasis>pattern</emphasis> (see
-<xref linkend="patterns"/>) in the message index.  Note that IMAP
-server-side searches (=b, =B, =h) are not supported for color index
-patterns.
+<emphasis><link linkend="regexp">regexp</link></emphasis> in the
+header/body of a message, <emphasis>index</emphasis> matches
+<emphasis><link linkend="patterns">pattern</link></emphasis> in the
+message index.  Note that IMAP server-side searches (=b, =B, =h) are
+not supported for color index patterns.
 </para>
 
 <para>
@@ -2774,6 +3019,18 @@ When set, color is applied only to the exact text matched by
 </itemizedlist>
 
 <para>
+<emphasis>attribute</emphasis> can be one of the following:
+</para>
+
+<itemizedlist>
+<listitem><para>none</para></listitem>
+<listitem><para>bold</para></listitem>
+<listitem><para>underline</para></listitem>
+<listitem><para>reverse</para></listitem>
+<listitem><para>standout</para></listitem>
+</itemizedlist>
+
+<para>
 <emphasis>foreground</emphasis> and <emphasis>background</emphasis> can
 be one of the following:
 </para>
@@ -2793,9 +3050,13 @@ be one of the following:
 </itemizedlist>
 
 <para>
-<emphasis>foreground</emphasis> can optionally be prefixed with the
-keyword <literal>bright</literal> to make the foreground color boldfaced
-(e.g., <literal>brightred</literal>).
+The color name can optionally be prefixed with the keyword
+<literal>bright</literal> or <literal>light</literal> to make the color
+boldfaced or light (e.g., <literal>brightred</literal>). The precise
+behavior depends on the terminal and its configuration. In particular,
+the boldfaced/light difference and such background colors may be
+available only for terminals configured with at least 16&nbsp;colors,
+as specified by the <literal>$TERM</literal> environment variable.
 </para>
 
 <para>
@@ -2921,19 +3182,9 @@ command. Usage:
 </cmdsynopsis>
 
 <para>
-For <emphasis>object</emphasis> and <emphasis>composeobject</emphasis>,
-see the <command>color</command> command. <emphasis>attribute</emphasis>
-can be one of the following:
+For <emphasis>object</emphasis>, <emphasis>composeobject</emphasis>, and
+<emphasis>attribute</emphasis>, see the <command>color</command> command.
 </para>
-
-<itemizedlist>
-<listitem><para>none</para></listitem>
-<listitem><para>bold</para></listitem>
-<listitem><para>underline</para></listitem>
-<listitem><para>reverse</para></listitem>
-<listitem><para>standout</para></listitem>
-</itemizedlist>
-
 </sect1>
 
 <sect1 id="msg-hdr-display">
@@ -3704,7 +3955,8 @@ language of the attributions and signatures based upon the recipients.
 <note>
 <para>
 <command>send-hook</command>'s are only executed once after getting the
-initial list of recipients.  Adding a recipient after replying or
+initial list of recipients.  They are not executed when resuming a postponed
+draft.  Adding a recipient after replying or
 editing the message will not cause any <command>send-hook</command> to
 be executed, similarly if <link linkend="autoedit">$autoedit</link> is
 set (as then the initial list of recipients is empty). Also note that
@@ -3795,6 +4047,70 @@ context: You can either put a numerical key ID or fingerprint here, an
 e-mail address, or even just a real name.
 </para>
 
+</sect1>
+
+<sect1 id="index-format-hook">
+<title>Dynamically Changing $index_format using Patterns</title>
+
+<para>Usage:</para>
+
+<cmdsynopsis>
+<command>index-format-hook</command>
+<arg choice="plain">
+<replaceable class="parameter">name</replaceable>
+</arg>
+<arg choice="plain">
+<replaceable class="parameter">[!]pattern</replaceable>
+</arg>
+<arg choice="plain">
+<replaceable class="parameter">format-string</replaceable>
+</arg>
+</cmdsynopsis>
+
+<para>
+This command is used to inject format strings dynamically into <link
+linkend="index-format">$index_format</link> based on pattern matching
+against the current message.
+</para>
+
+<para>
+The <link linkend="index-format">$index_format</link> expando
+<emphasis>%@name@</emphasis> specifies a placeholder for the
+injection.  Index-format-hooks with the same <emphasis>name</emphasis>
+are matched using <link
+linkend="patterns"><emphasis>pattern</emphasis></link> against the
+current message.  Matching is done in the order specified in the
+.muttrc, with the first match being used.  The hook's
+<emphasis>format-string</emphasis> is then substituted and evaluated.
+</para>
+
+<para>
+Because the first match is used, best practice is to put a catch-all
+<emphasis>~A</emphasis> pattern as the last hook.  Here is an example
+showing how to implement dynamic date formatting:
+</para>
+
+<screen>
+set index_format="%4C %-6@date@ %-15.15F %Z (%4c) %s"
+
+index-format-hook  date  "~d&lt;1d"    "%[%H:%M]"
+index-format-hook  date  "~d&lt;1m"    "%[%a %d]"
+index-format-hook  date  "~d&lt;1y"    "%[%b %d]"
+index-format-hook  date  "~A"       "%[%m/%y]"
+</screen>
+
+<para>
+Another example, showing a way to prepend to the subject.  Note that
+without a catch-all ~A pattern, no match results in the expando
+being replaced with an empty string.
+</para>
+
+<screen>
+set index_format="%4C %@subj_flags@%s"
+
+index-format-hook  subj_flags  "~f boss@example.com"    "** BOSS ** "
+index-format-hook  subj_flags  "~f spouse@example.com"  ":-) "
+</screen>
 </sect1>
 
 <sect1 id="push">
@@ -3982,6 +4298,17 @@ defined for a given message.)
 </para>
 
 <para>
+Note: the value displayed by <literal>%H</literal> and searched by
+<literal>~H</literal> is stored in the <link linkend="caching">header
+cache</link>.  Mutt isn't smart enough to invalidate a header cache
+entry based on changing <literal>spam</literal> rules, so if you
+aren't seeing correct <literal>%H</literal> values, try temporarily
+turning off the header cache.  If that fixes the problem, then once
+your spam rules are set to your liking, remove your stale header cache
+files and turn the header cache back on.
+</para>
+
+<para>
 Your first step is to define your external filter's spam patterns using
 the <command>spam</command> command. <emphasis>pattern</emphasis> should
 be a regular expression that matches a header in a mail message. If any
@@ -4140,6 +4467,14 @@ A boolean expression, either <quote>yes</quote> or <quote>no</quote>.
 <listitem>
 <para>
 A signed integer number in the range -32768 to 32767.
+</para>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term>number (long)</term>
+<listitem>
+<para>
+A signed integer number in the range -2147483648 to 2147483647.
 </para>
 </listitem>
 </varlistentry>
@@ -5208,8 +5543,14 @@ shows several ways to select messages.
 <row><entry>~n [<emphasis>MIN</emphasis>]-[<emphasis>MAX</emphasis>]</entry><entry>messages with a score in the range <emphasis>MIN</emphasis> to <emphasis>MAX</emphasis> *)</entry></row>
 <row><entry>~N</entry><entry>new messages</entry></row>
 <row><entry>~O</entry><entry>old messages</entry></row>
-<row><entry>~p</entry><entry>messages addressed to you (consults <command>alternates</command>)</entry></row>
-<row><entry>~P</entry><entry>messages from you (consults <command>alternates</command>)</entry></row>
+<row>
+<entry>~p</entry>
+<entry>messages addressed to you (consults <link linkend="from">$from</link>, <command>alternates</command>, and local account/hostname information)</entry>
+</row>
+<row>
+<entry>~P</entry>
+<entry>messages from you (consults <link linkend="from">$from</link>, <command>alternates</command>, and local account/hostname information)</entry>
+</row>
 <row><entry>~Q</entry><entry>messages which have been replied to</entry></row>
 <row><entry>~r [<emphasis>MIN</emphasis>]-[<emphasis>MAX</emphasis>]</entry><entry>messages with <quote>date-received</quote> in a Date range</entry></row>
 <row><entry>~R</entry><entry>read messages</entry></row>
@@ -5266,7 +5607,7 @@ coloring.
 </para>
 
 <para>
-Special attention has to be payed when using regular expressions inside
+Special attention has to be paid when using regular expressions inside
 of patterns.  Specifically, Mutt's parser for these patterns will strip
 one level of backslash (<quote>\</quote>), which is normally used for
 quoting.  If it is your intention to use a backslash in the regular
@@ -5577,8 +5918,26 @@ as:
 
 <para>
 <emphasis>offset</emphasis> is specified as a positive number with one
-of the units from <xref linkend="tab-date-units"/>.
+of the units from <xref linkend="tab-rel-date-units"/>.
 </para>
+
+<table id="tab-rel-date-units">
+<title>Relative date units</title>
+<tgroup cols="2">
+<thead>
+<row><entry>Unit</entry><entry>Description</entry></row>
+</thead>
+<tbody>
+<row><entry>y</entry><entry>Years</entry></row>
+<row><entry>m</entry><entry>Months</entry></row>
+<row><entry>w</entry><entry>Weeks</entry></row>
+<row><entry>d</entry><entry>Days</entry></row>
+<row><entry>H</entry><entry>Hours</entry></row>
+<row><entry>M</entry><entry>Minutes</entry></row>
+<row><entry>S</entry><entry>Seconds</entry></row>
+</tbody>
+</tgroup>
+</table>
 
 <para>
 Example: to select messages less than 1 month old, you would use
@@ -5716,7 +6075,13 @@ option/command.  See:
 
 <listitem>
 <para>
-<link linkend="iconv-hook"><command>iconv-hook</command></link>
+<link linkend="charset-hook"><command>iconv-hook</command></link>
+</para>
+</listitem>
+
+<listitem>
+<para>
+<link linkend="index-format-hook"><command>index-format-hook</command></link>
 </para>
 </listitem>
 
@@ -5759,6 +6124,8 @@ option/command.  See:
 </itemizedlist>
 
 for specific details on each type of <emphasis>hook</emphasis> available.
+Also see <link linkend="compose-flow">Message Composition Flow</link> for
+an overview of the composition process.
 </para>
 
 <note>
@@ -5793,7 +6160,8 @@ From: header is changed to <literal>&lt;c@c.c&gt;</literal>.
 Hooks that act upon messages (<command>message-hook</command>,
 <command>reply-hook</command>, <command>send-hook</command>,
 <command>send2-hook</command>, <command>save-hook</command>,
-<command>fcc-hook</command>) are evaluated in a slightly different
+<command>fcc-hook</command>, <command>index-format-hook</command>)
+are evaluated in a slightly different
 manner. For the other types of hooks, a <link linkend="regexp">regular
 expression</link> is sufficient.  But in dealing with messages a finer
 grain of control is needed for matching since for different purposes you
@@ -6084,7 +6452,9 @@ not have to be a mailing list, but that is what it is most often used
 for), and what lists you are subscribed to.  This is accomplished
 through the use of the <link linkend="lists"><command>lists</command>
 and <command>subscribe</command></link> commands in your
-<literal>.muttrc</literal>.
+<literal>.muttrc</literal>.  Alternatively or additionally, you can set
+<link linkend="auto-subscribe">$auto_subscribe</link> to automatically
+subscribe addresses found in a <literal>List-Post</literal> header.
 </para>
 
 <para>
@@ -6385,6 +6755,40 @@ to immediately open the next folder with unread mail (if any).
 
 </sect2>
 
+<sect2 id="new-mail-monitoring">
+<title>Monitoring New Mail</title>
+
+<para>
+When the <emphasis>Inotify</emphasis> mechanism for monitoring of
+files is supported (Linux only) and not disabled at compilation time,
+Mutt immediately notifies about new mail for all folders configured via
+the <link linkend="mailboxes"><command>mailboxes</command></link>
+command.  Dependent on
+<link linkend="mailbox-formats">mailbox format</link> also added
+<emphasis>old</emphasis> mails are tracked (not for Maildir).
+</para>
+
+<para>
+No configuration variables are available.  Trace output is given when
+debugging is enabled via <link linkend="tab-commandline-options">command
+line option</link> <literal>-d3</literal>.  The lower level 2 only shows
+errors, the higher level 5 all including raw Inotify events.
+</para>
+
+<note>
+<para>
+Getting events about new mail is limited to the capabilities of the
+underlying mechanism.  <emphasis>Inotify</emphasis> only reports local
+changes, i. e. new mail notification works for mails delivered by an
+agent on the same machine as Mutt, but not when delivered remotely on
+a network file system as NFS.  Also the monitoring handles might fail
+in rare conditions, so you better don't completely rely on this
+feature.
+</para>
+</note>
+
+</sect2>
+
 <sect2 id="calc-mailbox-counts">
 <title>Calculating Mailbox Message Counts</title>
 
@@ -6535,6 +6939,139 @@ unset confirmappend
 macro index ,a "&lt;save-message&gt;=archive&lt;enter&gt;&lt;enter-command&gt;echo 'Saved to archive'&lt;enter&gt;"
 </screen>
 
+</sect1>
+
+<sect1 id="compose-flow">
+  <title>Message Composition Flow</title>
+
+  <para>
+    This is a brief overview of the steps Mutt takes during message
+    composition.  It also shows the order and timing of hook execution.
+  </para>
+
+  <itemizedlist>
+    <listitem>
+      <para>
+        Reply envelope settings.  <link
+        linkend="reverse-name">$reverse_name</link> processing.  To,
+        Cc, Subject, References header defaults.
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        <link linkend="my-hdr">my_hdr</link> processing for To, Cc,
+        Bcc, Subject headers.
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        Prompts for To, Cc, Bcc, Subject headers.
+        See <link linkend="askcc">$askcc</link>,
+        <link linkend="askbcc">$askbcc</link>,
+        <link linkend="fast-reply">$fast_reply</link>.
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        From header setting.  Note: this is so <link
+        linkend="send-hook">send-hook</link>s below can match ~P, but
+        From is re-set further below in case a send-hook changes the
+        value.
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        <link linkend="reply-hook">reply-hook</link>
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        <link linkend="send-hook">send-hook</link>
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        From header setting.
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        <link linkend="my-hdr">my_hdr</link> processing for From,
+        Reply-To, Message-ID and user-defined headers.  The To, Cc,
+        Bcc, Subject, and Return-Path headers are ignored at this
+        stage.
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        Message body and signature generation.
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        <link linkend="send2-hook">send2-hook</link>
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        <link linkend="realname">$realname</link> part of From header setting.
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        <link linkend="editor">$editor</link> invocation for the
+        message.
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        <link linkend="send2-hook">send2-hook</link>
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        Cryptographic settings.
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        <link linkend="fcc-hook">fcc-hook</link>.  Fcc setting.
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        <link linkend="compose-menu">Compose menu</link>.  Note: <link
+        linkend="send2-hook">send2-hook</link> is evaluated each time
+        the headers are changed.
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        Message encryption and signing.  Key selection.
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        Fcc saving if <link
+        linkend="fcc-before-send">$fcc_before_send</link> is set.  (Note the
+        variable documentation for caveats of Fcc'ing before sending.)
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        Message sending.
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        Fcc saving if <link
+        linkend="fcc-before-send">$fcc_before_send</link> is unset
+        (the default).  Note: prior to version 1.12, the Fcc was saved
+        before sending the message.  It is now by default saved
+        afterwards, but if the saving fails, the user is prompted.
+      </para>
+    </listitem>
+  </itemizedlist>
 </sect1>
 
 <sect1 id="misc-topics">
@@ -8012,7 +8549,8 @@ In lieu of file permissions, Mutt displays the string
 <quote>IMAP</quote>, possibly followed by the symbol <quote>+</quote>,
 indicating that the entry contains both messages and subfolders. On
 Cyrus-like servers folders will often contain both messages and
-subfolders.
+subfolders.  A mailbox name with a trailing delimiter (usually
+<quote>/</quote> or <quote>.</quote>) indicates subfolders.
 </para>
 </listitem>
 <listitem>
@@ -8141,6 +8679,45 @@ an empty list which makes Mutt try all available methods from
 most-secure to least-secure.
 </para>
 
+</sect1>
+
+<sect1 id="oauth">
+<title>OAUTHBEARER Support</title>
+
+<para>
+Preliminary OAUTH support for IMAP, POP, and SMTP is provided via
+external scripts.
+</para>
+
+<para>
+At least for Gmail, you can use the <literal>oauth2.py</literal>
+script from Google's gmail-oauth2-tools: <ulink
+url="https://github.com/google/gmail-oauth2-tools/blob/master/python/oauth2.py"
+>https://github.com/google/gmail-oauth2-tools/blob/master/python/oauth2.py</ulink>
+</para>
+
+<para>
+You'll need to get your own oauth client credentials for Gmail here:
+<ulink url="https://console.developers.google.com/apis/credentials"
+>https://console.developers.google.com/apis/credentials</ulink>
+</para>
+
+<para>
+Then, you'd use <literal>oauth2.py</literal> with
+<literal>--generate_oauth2_token</literal> to get a refresh token, and
+configure mutt with:
+</para>
+
+<screen>
+set imap_authenticators="oauthbearer"
+set imap_oauth_refresh_command="/path/to/oauth2.py --quiet --user=[email_address]\
+    --client_id=[client_id] --client_secret=[client_secret]\
+    --refresh_token=[refresh_token]"
+</screen>
+
+<para>
+Substitute pop or smtp for imap in the above example to configure for those.
+</para>
 </sect1>
 
 <sect1 id="account-hook">
@@ -8571,10 +9148,10 @@ please have a look at the mixmaster documentation.
     </table>
   </sect2>
 
-  <sect2 id="sidebar-commands">
+  <sect2 id="sidebar-whitelist">
     <title>Commands</title>
     <cmdsynopsis>
-      <command>sidebar_whitelist<anchor id="sidebar-whitelist"/></command>
+      <command>sidebar_whitelist</command>
       <arg choice="plain">
 	<replaceable class="parameter">mailbox</replaceable>
       </arg>
@@ -8582,7 +9159,7 @@ please have a look at the mixmaster documentation.
 	<replaceable class="parameter">mailbox</replaceable>
       </arg>
 
-      <command>unsidebar_whitelist<anchor id="unsidebar-whitelist"/></command>
+      <command>unsidebar_whitelist</command>
       <group choice="req">
       <arg choice="plain">
 	<replaceable class="parameter">*</replaceable>
@@ -8862,7 +9439,7 @@ please have a look at the mixmaster documentation.
         then you can use <literal>.</literal> as the regexp.
       </para>
 
-      <sect4 id="compress-open-hook-example">
+      <example id="compress-open-hook-example">
         <title>Example of open-hook</title>
 
         <screen>open-hook '\.gz$' &quot;gzip -cd '%f' &gt; '%t'&quot;</screen>
@@ -8877,7 +9454,7 @@ please have a look at the mixmaster documentation.
               to create a temporary file that it <emphasis>can</emphasis>
               read</para></listitem>
         </itemizedlist>
-      </sect4>
+      </example>
     </sect3>
 
     <sect3 id="close-hook">
@@ -8898,7 +9475,7 @@ please have a look at the mixmaster documentation.
         </para>
       </note>
 
-      <sect4 id="compress-close-hook-example">
+      <example id="compress-close-hook-example">
         <title>Example of close-hook</title>
 
         <screen>close-hook '\.gz$' &quot;gzip -c '%t' &gt; '%f'&quot;</screen>
@@ -8912,7 +9489,7 @@ please have a look at the mixmaster documentation.
           <listitem><para>Mutt uses the command <literal>gzip -c</literal>
               to create a new compressed file</para></listitem>
         </itemizedlist>
-      </sect4>
+      </example>
     </sect3>
 
     <sect3 id="append-hook">
@@ -8951,7 +9528,7 @@ please have a look at the mixmaster documentation.
         </para>
       </note>
 
-      <sect4 id="compress-append-hook-example">
+      <example id="compress-append-hook-example">
         <title>Example of append-hook</title>
 
         <screen>append-hook '\.gz$' &quot;gzip -c '%t' &gt;&gt; '%f'&quot;</screen>
@@ -8966,7 +9543,7 @@ please have a look at the mixmaster documentation.
           <listitem><para>Mutt uses the command <literal>gzip -c</literal>
               to append to an existing compressed file</para></listitem>
         </itemizedlist>
-      </sect4>
+      </example>
 
     </sect3>
 
@@ -9048,7 +9625,9 @@ Message-Id: headers contain a local part that is to be created in a
 unique fashion. In order to do so, Mutt will <quote>leak</quote> some
 information to the outside world when sending messages: the generation
 of this header includes a step counter which is increased (and rotated)
-with every message sent. In a longer running mutt session, others can
+with every message sent. Other parts include the date, time, PID of mutt,
+and <link linkend="hostname">$hostname</link>.
+In a longer running mutt session, others can
 make assumptions about your mailing habits depending on the number of
 messages sent. If this is not desired, the header can be manually
 provided using <link linkend="edit-headers">$edit_headers</link> (though
@@ -9583,7 +10162,7 @@ The following are the commands understood by Mutt:
 
 <listitem>
 <cmdsynopsis>
-<command><link linkend="iconv-hook">iconv-hook</link></command>
+<command><link linkend="charset-hook">iconv-hook</link></command>
 <arg choice="plain">
 <replaceable class="parameter">charset</replaceable>
 </arg>
@@ -9598,6 +10177,9 @@ The following are the commands understood by Mutt:
 <command><link linkend="color">color</link></command>
 <arg choice="plain">
 <replaceable class="parameter">object</replaceable>
+</arg>
+<arg choice="opt" rep="repeat">
+<replaceable class="parameter">attribute</replaceable>
 </arg>
 <arg choice="plain">
 <replaceable class="parameter">foreground</replaceable>
@@ -9615,6 +10197,9 @@ The following are the commands understood by Mutt:
 <option>body</option>
 </arg>
 </group>
+<arg choice="opt" rep="repeat">
+<replaceable class="parameter">attribute</replaceable>
+</arg>
 <arg choice="plain">
 <replaceable class="parameter">foreground</replaceable>
 </arg>
@@ -9628,6 +10213,9 @@ The following are the commands understood by Mutt:
 <command><link linkend="color">color</link></command>
 <arg choice="plain">
 <option>index</option>
+</arg>
+<arg choice="opt" rep="repeat">
+<replaceable class="parameter">attribute</replaceable>
 </arg>
 <arg choice="plain">
 <replaceable class="parameter">foreground</replaceable>
@@ -9645,6 +10233,9 @@ The following are the commands understood by Mutt:
 </arg>
 <arg choice="plain">
 <replaceable class="parameter">composeobject</replaceable>
+</arg>
+<arg choice="opt" rep="repeat">
+<replaceable class="parameter">attribute</replaceable>
 </arg>
 <arg choice="plain">
 <replaceable class="parameter">foreground</replaceable>
@@ -9825,6 +10416,21 @@ The following are the commands understood by Mutt:
 <replaceable>pattern</replaceable>
 </arg>
 </group>
+</cmdsynopsis>
+</listitem>
+
+<listitem>
+<cmdsynopsis>
+<command><link linkend="index-format-hook">index-format-hook</link></command>
+<arg choice="plain">
+<replaceable class="parameter">name</replaceable>
+</arg>
+<arg choice="plain">
+<replaceable class="parameter">[!]pattern</replaceable>
+</arg>
+<arg choice="plain">
+<replaceable class="parameter">format-string</replaceable>
+</arg>
 </cmdsynopsis>
 </listitem>
 
@@ -10207,7 +10813,7 @@ The following are the commands understood by Mutt:
 <replaceable class="parameter">mailbox</replaceable>
 </arg>
 
-<command><link linkend="unsidebar-whitelist">unsidebar_whitelist</link></command>
+<command><link linkend="sidebar-whitelist">unsidebar_whitelist</link></command>
 <group choice="req">
 <arg choice="plain">
 <replaceable class="parameter">*</replaceable>

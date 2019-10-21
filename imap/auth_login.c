@@ -1,20 +1,20 @@
 /*
  * Copyright (C) 1999-2001,2005,2009 Brendan Cully <brendan@kublai.com>
- * 
+ *
  *     This program is free software; you can redistribute it and/or modify
  *     it under the terms of the GNU General Public License as published by
  *     the Free Software Foundation; either version 2 of the License, or
  *     (at your option) any later version.
- * 
+ *
  *     This program is distributed in the hope that it will be useful,
  *     but WITHOUT ANY WARRANTY; without even the implied warranty of
  *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *     GNU General Public License for more details.
- * 
+ *
  *     You should have received a copy of the GNU General Public License
  *     along with this program; if not, write to the Free Software
  *     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
- */ 
+ */
 
 /* plain LOGIN support */
 
@@ -29,8 +29,8 @@
 /* imap_auth_login: Plain LOGIN support */
 imap_auth_res_t imap_auth_login (IMAP_DATA* idata, const char* method)
 {
-  char q_user[SHORT_STRING], q_pass[SHORT_STRING];
-  char buf[STRING];
+  char q_user[STRING], q_pass[STRING];
+  char buf[LONG_STRING];
   int rc;
 
   if (mutt_bit_isset (idata->capabilities, LOGINDISABLED))
@@ -55,12 +55,12 @@ imap_auth_res_t imap_auth_login (IMAP_DATA* idata, const char* method)
 
   if (debuglevel < IMAP_LOG_PASS)
     dprint (2, (debugfile, "Sending LOGIN command for %s...\n",
-      idata->conn->account.user));
+                idata->conn->account.user));
 #endif
 
   snprintf (buf, sizeof (buf), "LOGIN %s %s", q_user, q_pass);
   rc = imap_exec (idata, buf, IMAP_CMD_FAIL_OK | IMAP_CMD_PASS);
-  
+
   if (!rc)
   {
     mutt_clear_error(); /* clear "Logging in...".  fixes #3524 */

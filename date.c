@@ -1,20 +1,20 @@
 /*
  * Copyright (C) 1996-2000 Michael R. Elkins <me@mutt.org>
- * 
+ *
  *     This program is free software; you can redistribute it and/or modify
  *     it under the terms of the GNU General Public License as published by
  *     the Free Software Foundation; either version 2 of the License, or
  *     (at your option) any later version.
- * 
+ *
  *     This program is distributed in the hope that it will be useful,
  *     but WITHOUT ANY WARRANTY; without even the implied warranty of
  *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *     GNU General Public License for more details.
- * 
+ *
  *     You should have received a copy of the GNU General Public License
  *     along with this program; if not, write to the Free Software
  *     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
- */ 
+ */
 
 #if HAVE_CONFIG_H
 # include "config.h"
@@ -120,6 +120,19 @@ time_t mutt_mktime (struct tm *t, int local)
   return (g);
 }
 
+/* Safely add a timeout to a given time_t value, truncating instead of
+ * overflowing. */
+time_t mutt_add_timeout (time_t now, long timeout)
+{
+  if (timeout < 0)
+    return now;
+
+  if (TIME_T_MAX - now < timeout)
+    return TIME_T_MAX;
+
+  return now + timeout;
+}
+
 /* Return 1 if month is February of leap year, else 0 */
 static int isLeapYearFeb (struct tm *tm)
 {
@@ -190,8 +203,8 @@ void mutt_normalize_time (struct tm *tm)
     }
     tm->tm_mday += DaysPerMonth[tm->tm_mon] + isLeapYearFeb (tm);
   }
-  while (tm->tm_mday > (DaysPerMonth[tm->tm_mon] + 
-	(nLeap = isLeapYearFeb (tm))))
+  while (tm->tm_mday > (DaysPerMonth[tm->tm_mon] +
+                        (nLeap = isLeapYearFeb (tm))))
   {
     tm->tm_mday -= DaysPerMonth[tm->tm_mon] + nLeap;
     if (tm->tm_mon < 11)

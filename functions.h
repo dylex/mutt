@@ -1,20 +1,20 @@
 /*
  * Copyright (C) 1996-2000,2002 Michael R. Elkins <me@mutt.org>
- * 
+ *
  *     This program is free software; you can redistribute it and/or modify
  *     it under the terms of the GNU General Public License as published by
  *     the Free Software Foundation; either version 2 of the License, or
  *     (at your option) any later version.
- * 
+ *
  *     This program is distributed in the hope that it will be useful,
  *     but WITHOUT ANY WARRANTY; without even the implied warranty of
  *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *     GNU General Public License for more details.
- * 
+ *
  *     You should have received a copy of the GNU General Public License
  *     along with this program; if not, write to the Free Software
  *     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
- */ 
+ */
 
 /*
  * This file contains the structures needed to parse ``bind'' commands, as
@@ -80,6 +80,7 @@ const struct binding_t OpGeneric[] = { /* map: generic */
   { "current-bottom",   OP_CURRENT_BOTTOM,	NULL },
   { "error-history",    OP_ERROR_HISTORY,	NULL },
   { "what-key",		OP_WHAT_KEY,		NULL },
+  { "check-stats",	OP_CHECK_STATS,		NULL },
   { NULL,		0,			NULL }
 };
 
@@ -92,6 +93,7 @@ const struct binding_t OpMain[] = { /* map: index */
   { "next-unread-mailbox",	OP_MAIN_NEXT_UNREAD_MAILBOX,    NULL },
   { "collapse-thread",		OP_MAIN_COLLAPSE_THREAD,	"\033v" },
   { "collapse-all",		OP_MAIN_COLLAPSE_ALL,		"\033V" },
+  { "compose-to-sender",        OP_COMPOSE_TO_SENDER,           NULL},
   { "copy-message",		OP_COPY_MESSAGE,		"C" },
   { "decode-copy",		OP_DECODE_COPY,			"\033C" },
   { "decode-save",		OP_DECODE_SAVE,			"\033s" },
@@ -105,6 +107,7 @@ const struct binding_t OpMain[] = { /* map: index */
   { "edit-expiration",		OP_EDIT_EXPIRES,		"E" },
   { "forward-message",		OP_FORWARD_MESSAGE,		"f" },
   { "flag-message",		OP_FLAG_MESSAGE,		"F" },
+  { "group-chat-reply",		OP_GROUP_CHAT_REPLY,		NULL },
   { "group-reply",		OP_GROUP_REPLY,			"g" },
 #ifdef USE_POP
   { "fetch-mail",		OP_MAIN_FETCH_MAIL,		"G" },
@@ -195,6 +198,7 @@ const struct binding_t OpPager[] = { /* map: pager */
   { "change-folder",	OP_MAIN_CHANGE_FOLDER,		"c" },
   { "change-folder-readonly",	OP_MAIN_CHANGE_FOLDER_READONLY,	"\033c" },
   { "next-unread-mailbox",	OP_MAIN_NEXT_UNREAD_MAILBOX, NULL },
+  { "compose-to-sender",        OP_COMPOSE_TO_SENDER,           NULL},
   { "copy-message",	OP_COPY_MESSAGE,		"C" },
   { "decode-copy",	OP_DECODE_COPY,			"\033C" },
   { "delete-message",	OP_DELETE,			"d" },
@@ -208,6 +212,7 @@ const struct binding_t OpPager[] = { /* map: pager */
   { "edit-expiration",	OP_EDIT_EXPIRES,		"E" },
   { "forward-message",	OP_FORWARD_MESSAGE,		"f" },
   { "flag-message",	OP_FLAG_MESSAGE,		"F" },
+  { "group-chat-reply",	OP_GROUP_CHAT_REPLY,		NULL },
   { "group-reply",	OP_GROUP_REPLY,			"g" },
 #ifdef USE_IMAP
   { "imap-fetch-mail",  OP_MAIN_IMAP_FETCH,		NULL },
@@ -223,6 +228,7 @@ const struct binding_t OpPager[] = { /* map: pager */
   { "redraw-screen",	OP_REDRAW,			"\014" },
   { "mail",		OP_MAIL,			"m" },
   { "mark-as-new",	OP_TOGGLE_NEW,			"N" },
+  { "toggle-write",	OP_TOGGLE_WRITE,		"%" },
   { "search-next",	OP_SEARCH_NEXT,			"n" },
   { "next-thread",	OP_MAIN_NEXT_THREAD,		"\016" },
   { "next-subthread",	OP_MAIN_NEXT_SUBTHREAD,		"\033n" },
@@ -252,7 +258,7 @@ const struct binding_t OpPager[] = { /* map: pager */
   { "search-toggle",	OP_SEARCH_TOGGLE,		"\\" },
   { "display-address",	OP_DISPLAY_ADDRESS,		"@" },
   { "next-new",		OP_MAIN_NEXT_NEW,		NULL },
-  { "next-new-then-unread", 
+  { "next-new-then-unread",
                         OP_MAIN_NEXT_NEW_THEN_UNREAD,   "\t" },
   { "pipe-message",	OP_PIPE,			"|" },
   { "help",		OP_HELP,			"?" },
@@ -292,6 +298,7 @@ const struct binding_t OpPager[] = { /* map: pager */
   { "decrypt-save",    	OP_DECRYPT_SAVE,		NULL },
 
   { "what-key",		OP_WHAT_KEY,		NULL },
+  { "check-stats",	OP_CHECK_STATS,		NULL },
 
 #ifdef USE_SIDEBAR
   { "sidebar-next",		OP_SIDEBAR_NEXT,		NULL },
@@ -310,6 +317,7 @@ const struct binding_t OpPager[] = { /* map: pager */
 const struct binding_t OpAttach[] = { /* map: attachment */
   { "bounce-message",	OP_BOUNCE_MESSAGE,		"b" },
   { "display-toggle-weed",	OP_DISPLAY_HEADERS,	"h" },
+  { "compose-to-sender",        OP_COMPOSE_TO_SENDER,           NULL},
   { "edit-type",	OP_EDIT_TYPE,			"\005" },
   { "print-entry",	OP_PRINT,			"p" },
   { "save-entry",	OP_SAVE,			"s" },
@@ -317,6 +325,7 @@ const struct binding_t OpAttach[] = { /* map: attachment */
   { "view-mailcap",	OP_ATTACH_VIEW_MAILCAP,		"m" },
   { "reply",		OP_REPLY,			"r" },
   { "resend-message",	OP_RESEND,			"\033e" },
+  { "group-chat-reply",	OP_GROUP_CHAT_REPLY,		NULL },
   { "group-reply",	OP_GROUP_REPLY,			"g" },
   { "list-reply",	OP_LIST_REPLY,			"L" },
   { "forward-message",	OP_FORWARD_MESSAGE,		"f" },
@@ -380,7 +389,7 @@ const struct binding_t OpCompose[] = { /* map: compose */
 #ifdef MIXMASTER
   { "mix",		OP_COMPOSE_MIX,			"M" },
 #endif
-  
+
   { NULL,		0,				NULL }
 };
 
@@ -395,11 +404,12 @@ const struct binding_t OpAlias[] = { /* map: alias */
   { "undelete-entry",	OP_UNDELETE,	"u" },
   { NULL,		0,		NULL }
 };
-  
+
 
 /* The file browser */
 const struct binding_t OpBrowser[] = { /* map: browser */
   { "change-dir",	OP_CHANGE_DIRECTORY,	"c" },
+  { "descend-directory", OP_DESCEND_DIRECTORY,	NULL },
   { "display-filename",	OP_BROWSER_TELL,	"@" },
   { "enter-mask",	OP_ENTER_MASK,		"m" },
   { "sort",		OP_SORT,		"o" },
