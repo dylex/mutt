@@ -159,6 +159,7 @@ typedef enum
 typedef enum
 {
   MUTT_WRITE_HEADER_NORMAL,
+  MUTT_WRITE_HEADER_FCC,
   MUTT_WRITE_HEADER_POSTPONE,
   MUTT_WRITE_HEADER_EDITHDRS,
   MUTT_WRITE_HEADER_MIME
@@ -202,9 +203,8 @@ typedef enum
 
 #define MUTT_THREAD_COLLAPSE    (1<<0)
 #define MUTT_THREAD_UNCOLLAPSE  (1<<1)
-#define MUTT_THREAD_GET_HIDDEN  (1<<2)
-#define MUTT_THREAD_UNREAD      (1<<3)
-#define MUTT_THREAD_NEXT_UNREAD (1<<4)
+#define MUTT_THREAD_UNREAD      (1<<2)
+#define MUTT_THREAD_NEXT_UNREAD (1<<3)
 
 enum
 {
@@ -289,7 +289,14 @@ enum
   MUTT_SAVE_OVERWRITE
 };
 
+/* used by init.h MuttVars and Commands dispatch functions */
 /* possible arguments to set_quadoption() */
+union pointer_long_t
+{
+  void *p;
+  long l;
+};
+
 enum
 {
   MUTT_NO,
@@ -324,6 +331,7 @@ enum
   OPT_QUIT,
   OPT_REPLYTO,
   OPT_RECALL,
+  OPT_SENDMULTIPARTALT,
 #if defined(USE_SSL)
   OPT_SSLSTARTTLS,
 #endif
@@ -372,6 +380,10 @@ enum
   OPTASKBCC,
   OPTASKCC,
   OPTATTACHSPLIT,
+#ifdef USE_AUTOCRYPT
+  OPTAUTOCRYPT,
+  OPTAUTOCRYPTREPLY,
+#endif
   OPTAUTOEDIT,
   OPTAUTOSUBSCRIBE,
   OPTAUTOTAG,
@@ -381,11 +393,13 @@ enum
   OPTCHANGEFOLDERNEXT,
   OPTBRAILLEFRIENDLY,
   OPTBROWSERABBRMAILBOXES,
+  OPTBROWSERSTICKYCURSOR,
   OPTCHECKMBOXSIZE,
   OPTCHECKNEW,
   OPTCOLLAPSEUNREAD,
   OPTCONFIRMAPPEND,
   OPTCONFIRMCREATE,
+  OPTCOUNTALTERNATIVES,
   OPTDELETEUNTAG,
   OPTDIGESTCOLLAPSE,
   OPTDUPTHREADS,
@@ -439,6 +453,7 @@ enum
   OPTTLSV1,
   OPTTLSV1_1,
   OPTTLSV1_2,
+  OPTTLSV1_3,
   OPTSSLFORCETLS,
   OPTSSLVERIFYDATES,
   OPTSSLVERIFYHOST,
@@ -499,10 +514,16 @@ enum
   OPTSIDEBARFOLDERINDENT,
   OPTSIDEBARNEWMAILONLY,
   OPTSIDEBARNEXTNEWWRAP,
+  OPTSIDEBARRELSPINDENT,
+  OPTSIDEBARUSEMBSHORTCUTS,
   OPTSIDEBARSHORTPATH,
 #endif
   OPTSIGDASHES,
   OPTSIGONTOP,
+  OPTSIZESHOWBYTES,
+  OPTSIZESHOWMB,
+  OPTSIZESHOWFRACTIONS,
+  OPTSIZEUNITSONLEFT,
   OPTSORTDOMAIN,
   OPTSORTRE,
   OPTSPAMSEP,
@@ -595,6 +616,8 @@ enum
   OPTPGPCHECKTRUST,	/* (pseudo) used by pgp_select_key () */
   OPTDONTHANDLEPGPKEYS,	/* (pseudo) used to extract PGP keys */
   OPTIGNOREMACROEVENTS, /* (pseudo) don't process macro/push/exec events while set */
+  OPTAUTOCRYPTGPGME,    /* (pseudo) use Autocrypt context inside crypt-gpgme.c */
+  OPTMENUPOPCLEARSCREEN, /* (pseudo) clear the screen when popping the last menu. */
 
   OPTMAX
 };
@@ -634,6 +657,7 @@ typedef struct replace_list_t
 #define mutt_new_rx_list() safe_calloc (1, sizeof (RX_LIST))
 #define mutt_new_replace_list() safe_calloc (1, sizeof (REPLACE_LIST))
 void mutt_free_list (LIST **);
+void mutt_free_list_generic (LIST **list, void (*data_free)(char **));
 void mutt_free_rx_list (RX_LIST **);
 void mutt_free_replace_list (REPLACE_LIST **);
 LIST *mutt_copy_list (LIST *);
@@ -664,6 +688,17 @@ typedef struct alias
 #define MUTT_ENV_CHANGED_SUBJECT (1<<3)  /* Protected header update */
 #define MUTT_ENV_CHANGED_EXPIRES (1<<4)
 
+#ifdef USE_AUTOCRYPT
+typedef struct autocrypt
+{
+  char *addr;
+  char *keydata;
+  unsigned int prefer_encrypt : 1;
+  unsigned int invalid : 1;
+  struct autocrypt *next;
+} AUTOCRYPTHDR;
+#endif
+
 typedef struct envelope
 {
   ADDRESS *return_path;
@@ -687,7 +722,10 @@ typedef struct envelope
   LIST *references;		/* message references (in reverse order) */
   LIST *in_reply_to;		/* in-reply-to header content */
   LIST *userhdrs;		/* user defined headers */
-
+#ifdef USE_AUTOCRYPT
+  AUTOCRYPTHDR *autocrypt;
+  AUTOCRYPTHDR *autocrypt_gossip;
+#endif
   unsigned char changed;       /* The MUTT_ENV_CHANGED_* flags specify which
                                 * fields are modified */
 } ENVELOPE;
@@ -789,6 +827,10 @@ typedef struct body
   unsigned int goodsig : 1;	/* good cryptographic signature */
   unsigned int warnsig : 1;     /* maybe good signature */
   unsigned int badsig : 1;	/* bad cryptographic signature (needed to check encrypted s/mime-signatures) */
+#ifdef USE_AUTOCRYPT
+  unsigned int is_autocrypt : 1;  /* used to flag autocrypt-decrypted messages
+                                   * for replying */
+#endif
 
   unsigned int collapsed : 1;	/* used by recvattach */
   unsigned int attach_qualifies : 1;
@@ -800,7 +842,9 @@ typedef struct mutt_thread THREAD;
 
 typedef struct header
 {
-  unsigned int security : 12;  /* bit 0-8: flags, bit 9,10: application.
+  unsigned int security : 14;  /* bit 0-10:   flags
+                                  bit 11-12: application.
+                                  bit 13:    traditional pgp.
                                   see: mutt_crypt.h pgplib.h, smime.h */
 
   unsigned int mime : 1;    		/* has a MIME-Version header? */
@@ -839,7 +883,9 @@ typedef struct header
   /* the following are used to support collapsing threads  */
   unsigned int collapsed : 1; 	/* is this message part of a collapsed thread? */
   unsigned int limited : 1;   	/* is this message in a limited view?  */
-  size_t num_hidden;          	/* number of hidden messages in this view */
+  size_t num_hidden;            /* number of hidden messages in this view.
+                                 * only valid for the root header, when
+                                 * collapsed is set. */
 
   short recipient;		/* user_is_recipient()'s return value, cached */
 
