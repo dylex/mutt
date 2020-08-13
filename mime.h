@@ -52,6 +52,11 @@ enum
   DISPNONE /* no preferred disposition */
 };
 
+/* Some limits to mitigate stack overflow and denial of service attacks */
+#define MUTT_MIME_MAX_DEPTH  50
+#define MUTT_MIME_MAX_PARTS  5000
+
+
 /* MIME encoding/decoding global vars */
 
 #ifndef _SENDLIB_C
@@ -64,9 +69,11 @@ extern const char B64Chars[];
 #define base64val(c) Index_64[(unsigned int)(c)]
 
 #define is_multipart(x)                                                 \
-  ((x)->type == TYPEMULTIPART                                           \
-   || ((x)->type == TYPEMESSAGE && (!strcasecmp((x)->subtype, "rfc822") \
-   || !strcasecmp((x)->subtype, "news"))))
+  ((x)->type == TYPEMULTIPART  ||                                       \
+  ((x)->type == TYPEMESSAGE &&                                          \
+   (!ascii_strcasecmp((x)->subtype, "rfc822") ||                        \
+    !ascii_strcasecmp((x)->subtype, "news")   ||                        \
+    !ascii_strcasecmp((x)->subtype, "global"))))
 
 extern const char *BodyTypes[];
 extern const char *BodyEncodings[];

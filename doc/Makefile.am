@@ -6,7 +6,7 @@ AUTOMAKE_OPTIONS = 1.6 foreign
 subdir = doc
 
 if BUILD_INFO
-INFO_DOCFILES = mutt.info
+INFO_DOCFILES = mutt.info mutt.texi
 endif
 if BUILD_DOC
 BUILD_DOC_TARGETS = stamp-doc-chunked manual.html manual.txt $(INFO_DOCFILES)
@@ -16,8 +16,6 @@ DEFS = -DSYSCONFDIR=\"$(sysconfdir)\" -DBINDIR=\"$(bindir)\" -DHAVE_CONFIG_H=1
 AM_CPPFLAGS = -I. -I.. -I$(includedir) -I$(top_srcdir)
 
 MAKEDOC_CPP = $(CPP) $(AM_CPPFLAGS) $(DEFS) $(CPPFLAGS) -D_MAKEDOC -C
-
-noinst_PROGRAMS = makedoc
 
 EXTRA_DIST = dotlock.man		\
         smime_keys.man                  \
@@ -37,8 +35,8 @@ EXTRA_DIST = dotlock.man		\
 	instdoc.sh.in			\
 	patch-notes.txt			\
 	smime-notes.txt			\
-	Muttrc Muttrc.head stamp-doc-rc \
-	makedoc.c makedoc-defs.h 	\
+	Muttrc.head			\
+	makedoc.pl makedoc-defs.h 	\
 	mutt.css mutt.xsl html.xsl chunk.xsl $(BUILT_DISTFILES)
 
 CHUNKED_DOCFILES = index.html intro.html gettingstarted.html \
@@ -47,7 +45,18 @@ CHUNKED_DOCFILES = index.html intro.html gettingstarted.html \
 
 HTML_DOCFILES = manual.html $(CHUNKED_DOCFILES)
 
-BUILT_DISTFILES = stamp-doc-xml stamp-doc-chunked manual.txt $(HTML_DOCFILES) $(INFO_DOCFILES)
+# Note: these are bundled with a dist tarball, so they can be
+# installed from $(srcdir), after checking that they haven't been
+# rebuilt in the build directory.  This could happen in a git checkout
+# with a separate build directory, for example.
+#
+# Muttrc and stamp-doc-rc are not included because of docdir substitution.
+# manual.txt is not included because of different generation tool preferences.
+BUILT_DISTFILES = stamp-doc-xml		\
+		stamp-doc-chunked	\
+		muttrc.man		\
+		$(HTML_DOCFILES)	\
+		$(INFO_DOCFILES)
 
 srcdir_DOCFILES = PGP-Notes.txt applying-patches.txt	\
 	devel-notes.txt patch-notes.txt smime-notes.txt
@@ -69,7 +78,11 @@ install-data-local: makedoc-all instdoc
 	./instdoc mutt_pgpring.1 $(DESTDIR)$(mandir)/man1/mutt_pgpring.1
 	test x$(DOTLOCK_TARGET) = x || ./instdoc $(srcdir)/dotlock.man \
 		$(DESTDIR)$(mandir)/man1/mutt_dotlock.1
-	./instdoc muttrc.man $(DESTDIR)$(mandir)/man5/muttrc.5
+	-if [ -f muttrc.man ] ; then \
+	  ./instdoc muttrc.man $(DESTDIR)$(mandir)/man5/muttrc.5 ; \
+	elif [ -f $(srcdir)/muttrc.man ] ; then \
+	  ./instdoc $(srcdir)/muttrc.man $(DESTDIR)$(mandir)/man5/muttrc.5 ; \
+	fi
 	./instdoc $(srcdir)/mbox.man $(DESTDIR)$(mandir)/man5/mbox.5
 	./instdoc $(srcdir)/mmdf.man $(DESTDIR)$(mandir)/man5/mmdf.5
 	$(MKDIR_P) $(DESTDIR)$(docdir)
@@ -85,6 +98,8 @@ install-data-local: makedoc-all instdoc
 	-for f in $(HTML_DOCFILES) ; do \
 	  if [ -f $$f ] ; then \
 	    $(INSTALL) -m 644 $$f $(DESTDIR)$(docdir) ; \
+	  elif [ -f $(srcdir)/$$f ] ; then \
+	    $(INSTALL) -m 644 $(srcdir)/$$f $(DESTDIR)$(docdir) ; \
 	  fi \
 	done
 	$(INSTALL) -m 644 Muttrc $(DESTDIR)$(sysconfdir)/Muttrc.dist
@@ -98,6 +113,12 @@ install-data-local: makedoc-all instdoc
 	-if [ -f mutt.info ] ; then \
 	  $(MKDIR_P) $(DESTDIR)$(infodir) ; \
 	  $(INSTALL) -m 644 mutt.info $(DESTDIR)$(infodir) ; \
+	  if command -v install-info >/dev/null 2>&1 ; then \
+	    install-info $(DESTDIR)$(infodir)/mutt.info $(DESTDIR)$(infodir)/dir ; \
+	  fi \
+	elif [ -f $(srcdir)/mutt.info ] ; then \
+	  $(MKDIR_P) $(DESTDIR)$(infodir) ; \
+	  $(INSTALL) -m 644 $(srcdir)/mutt.info $(DESTDIR)$(infodir) ; \
 	  if command -v install-info >/dev/null 2>&1 ; then \
 	    install-info $(DESTDIR)$(infodir)/mutt.info $(DESTDIR)$(infodir)/dir ; \
 	  fi \
@@ -136,11 +157,11 @@ manual.txt: manual.html
 
 Muttrc: stamp-doc-rc
 
-stamp-doc-rc: $(top_srcdir)/init.h makedoc$(EXEEXT) $(srcdir)/Muttrc.head
+stamp-doc-rc: $(top_srcdir)/init.h makedoc.pl $(srcdir)/Muttrc.head
 	-rm -f Muttrc stamp-doc-rc
 	sed -e 's,[@]docdir[@],$(docdir),' $(srcdir)/Muttrc.head > Muttrc
 	$(CPP) $(AM_CPPFLAGS) $(DEFS) $(CPPFLAGS) -D_MAKEDOC -C \
-	  $(top_srcdir)/init.h | ./makedoc$(EXEEXT) -c >> Muttrc
+	  $(top_srcdir)/init.h | perl $(srcdir)/makedoc.pl -c >> Muttrc
 	touch stamp-doc-rc
 
 manual.html: $(srcdir)/html.xsl $(srcdir)/mutt.xsl stamp-doc-xml $(srcdir)/mutt.css
@@ -211,8 +232,8 @@ instdoc: instdoc.sh
 
 update-doc: stamp-doc-rc $(BUILD_DOC_TARGETS)
 
-muttrc.man: makedoc$(EXEEXT) $(top_srcdir)/init.h muttrc.man.head muttrc.man.tail
-	$(MAKEDOC_CPP) $(top_srcdir)/init.h | ./makedoc$(EXEEXT) -m | 	    \
+muttrc.man: makedoc.pl $(top_srcdir)/init.h muttrc.man.head muttrc.man.tail
+	$(MAKEDOC_CPP) $(top_srcdir)/init.h | perl $(srcdir)/makedoc.pl -m | 	    \
 		cat $(srcdir)/muttrc.man.head - $(srcdir)/muttrc.man.tail\
 		> muttrc.man
 
@@ -232,13 +253,13 @@ mutt_pgpring.1: $(srcdir)/pgpring.man
 smime_keys.1: $(srcdir)/smime_keys.man
 	$(EDIT) $(srcdir)/smime_keys.man > $@
 
-stamp-doc-xml: makedoc$(EXEEXT) $(top_srcdir)/init.h \
+stamp-doc-xml: makedoc.pl $(top_srcdir)/init.h \
                manual.xml.head $(top_srcdir)/functions.h $(top_srcdir)/OPS* manual.xml.tail \
                $(srcdir)/gen-map-doc $(top_srcdir)/VERSION $(top_srcdir)/ChangeLog
 	( date=`(cd $(top_srcdir) && ./mkreldate.sh)` && \
 	  version=`(cd $(top_srcdir) && env sh ./version.sh)` && \
 	  sed -e "s/@VERSION\@/$$version ($$date)/" $(srcdir)/manual.xml.head && \
-	  $(MAKEDOC_CPP) $(top_srcdir)/init.h | ./makedoc$(EXEEXT) -s && \
+	  $(MAKEDOC_CPP) $(top_srcdir)/init.h | perl $(srcdir)/makedoc.pl -s && \
 	  $(MAKEDOC_CPP) $(top_srcdir)/functions.h | \
 	    perl $(srcdir)/gen-map-doc $(srcdir)/manual.xml.tail $(top_srcdir)/OPS* \
 	) > manual.xml

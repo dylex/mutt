@@ -38,6 +38,12 @@
 #include <sys/stat.h>
 #include <stdlib.h>
 
+static void _parse_part (FILE *fp, BODY *b, int *counter);
+static BODY *_parse_messageRFC822 (FILE *fp, BODY *parent, int *counter);
+static BODY *_parse_multipart (FILE *fp, const char *boundary, LOFF_T end_off,
+                               int digest, int *counter);
+
+
 /* Reads an arbitrarily long header field, and looks ahead for continuation
  * lines.  ``line'' must point to a dynamically allocated string; it is
  * increased if more space is required to fit the whole line.
@@ -590,9 +596,17 @@ BODY *mutt_read_mime_header (FILE *fp, int digest)
   return (p);
 }
 
-void mutt_parse_part (FILE *fp, BODY *b)
+static void _parse_part (FILE *fp, BODY *b, int *counter)
 {
   char *bound = 0;
+  static unsigned short recurse_level = 0;
+
+  if (recurse_level >= MUTT_MIME_MAX_DEPTH)
+  {
+    dprint (1, (debugfile, "mutt_parse_part(): recurse level too deep. giving up!\n"));
+    return;
+  }
+  recurse_level++;
 
   switch (b->type)
   {
@@ -605,9 +619,10 @@ void mutt_parse_part (FILE *fp, BODY *b)
         bound = mutt_get_parameter ("boundary", b->parameter);
 
       fseeko (fp, b->offset, SEEK_SET);
-      b->parts =  mutt_parse_multipart (fp, bound,
-					b->offset + b->length,
-					ascii_strcasecmp ("digest", b->subtype) == 0);
+      b->parts =  _parse_multipart (fp, bound,
+                                    b->offset + b->length,
+                                    ascii_strcasecmp ("digest", b->subtype) == 0,
+                                    counter);
       break;
 
     case TYPEMESSAGE:
@@ -615,16 +630,16 @@ void mutt_parse_part (FILE *fp, BODY *b)
       {
 	fseeko (fp, b->offset, SEEK_SET);
 	if (mutt_is_message_type(b->type, b->subtype))
-	  b->parts = mutt_parse_messageRFC822 (fp, b);
+	  b->parts = _parse_messageRFC822 (fp, b, counter);
 	else if (ascii_strcasecmp (b->subtype, "external-body") == 0)
 	  b->parts = mutt_read_mime_header (fp, 0);
 	else
-	  return;
+	  goto bail;
       }
       break;
 
     default:
-      return;
+      goto bail;
   }
 
   /* try to recover from parsing error */
@@ -633,6 +648,8 @@ void mutt_parse_part (FILE *fp, BODY *b)
     b->type = TYPETEXT;
     mutt_str_replace (&b->subtype, "plain");
   }
+bail:
+  recurse_level--;
 }
 
 /* parse a MESSAGE/RFC822 body
@@ -646,7 +663,7 @@ void mutt_parse_part (FILE *fp, BODY *b)
  * NOTE: this assumes that `parent->length' has been set!
  */
 
-BODY *mutt_parse_messageRFC822 (FILE *fp, BODY *parent)
+static BODY *_parse_messageRFC822 (FILE *fp, BODY *parent, int *counter)
 {
   BODY *msg;
 
@@ -664,7 +681,7 @@ BODY *mutt_parse_messageRFC822 (FILE *fp, BODY *parent)
   if (msg->length < 0)
     msg->length = 0;
 
-  mutt_parse_part(fp, msg);
+  _parse_part(fp, msg, counter);
   return (msg);
 }
 
@@ -681,7 +698,8 @@ BODY *mutt_parse_messageRFC822 (FILE *fp, BODY *parent)
  *	digest		1 if reading a multipart/digest, 0 otherwise
  */
 
-BODY *mutt_parse_multipart (FILE *fp, const char *boundary, LOFF_T end_off, int digest)
+static BODY *_parse_multipart (FILE *fp, const char *boundary, LOFF_T end_off,
+                               int digest, int *counter)
 {
 #ifdef SUN_ATTACHMENT
   int lines;
@@ -759,6 +777,14 @@ BODY *mutt_parse_multipart (FILE *fp, const char *boundary, LOFF_T end_off, int 
 	}
 	else
 	  last = head = new;
+
+        /* It seems more intuitive to add the counter increment to
+         * _parse_part(), but we want to stop the case where a multipart
+         * contains thousands of tiny parts before the memory and data
+         * structures are allocated.
+         */
+        if (++(*counter) >= MUTT_MIME_MAX_PARTS)
+          break;
       }
     }
   }
@@ -769,10 +795,32 @@ BODY *mutt_parse_multipart (FILE *fp, const char *boundary, LOFF_T end_off, int 
 
   /* parse recursive MIME parts */
   for (last = head; last; last = last->next)
-    mutt_parse_part(fp, last);
+    _parse_part(fp, last, counter);
 
   return (head);
 }
+
+void mutt_parse_part (FILE *fp, BODY *b)
+{
+  int counter = 0;
+
+  _parse_part (fp, b, &counter);
+}
+
+BODY *mutt_parse_messageRFC822 (FILE *fp, BODY *parent)
+{
+  int counter = 0;
+
+  return _parse_messageRFC822 (fp, parent, &counter);
+}
+
+BODY *mutt_parse_multipart (FILE *fp, const char *boundary, LOFF_T end_off, int digest)
+{
+  int counter = 0;
+
+  return _parse_multipart (fp, boundary, end_off, digest, &counter);
+}
+
 
 static const char *uncomment_timezone (char *buf, size_t buflen, const char *tz)
 {
@@ -1706,7 +1754,7 @@ static int count_body_parts_check(LIST **checklist, BODY *b, int dflt)
 static int count_body_parts (BODY *body, int flags)
 {
   int count = 0;
-  int shallcount, shallrecurse;
+  int shallcount, shallrecurse, recurse_flags = 0;
   BODY *bp;
 
   if (body == NULL)
@@ -1741,16 +1789,21 @@ static int count_body_parts (BODY *body, int flags)
       /* Always recurse multiparts, except multipart/alternative. */
       shallrecurse = 1;
       if (!ascii_strcasecmp(bp->subtype, "alternative"))
+      {
         shallrecurse = option (OPTCOUNTALTERNATIVES);
+        /* alternative counting needs to distinguish between a "root"
+         * multipart/alternative and non-root.  See further below.
+         */
+        if (bp == body)
+          recurse_flags |= MUTT_PARTS_ROOT_MPALT;
+        else
+          recurse_flags |= MUTT_PARTS_NONROOT_MPALT;
+      }
 
       /* Don't count containers if they're top-level. */
       if (flags & MUTT_PARTS_TOPLEVEL)
 	AT_NOCOUNT("top-level multipart");
     }
-
-    if (bp->disposition == DISPINLINE &&
-        bp->type != TYPEMULTIPART && bp->type != TYPEMESSAGE && bp == body)
-      AT_NOCOUNT("ignore fundamental inlines");
 
     /* If this body isn't scheduled for enumeration already, don't bother
      * profiling it further.
@@ -1771,10 +1824,27 @@ static int count_body_parts (BODY *body, int flags)
       }
       else
       {
-        if (!count_body_parts_check(&InlineAllow, bp, 1))
-	  AT_NOCOUNT("inline not allowed");
-        if (count_body_parts_check(&InlineExclude, bp, 0))
-	  AT_NOCOUNT("excluded");
+        /* - root multipart/alternative top-level inline parts are
+         *   also treated as root parts
+         * - nonroot multipart/alternative top-level parts are NOT
+         *   treated as root parts
+         * - otherwise, initial inline parts are considered root
+         */
+        if (((bp == body) && !(flags & MUTT_PARTS_NONROOT_MPALT)) ||
+            (flags & MUTT_PARTS_ROOT_MPALT))
+        {
+          if (!count_body_parts_check(&RootAllow, bp, 1))
+            AT_NOCOUNT("root not allowed");
+          if (count_body_parts_check(&RootExclude, bp, 0))
+            AT_NOCOUNT("root excluded");
+        }
+        else
+        {
+          if (!count_body_parts_check(&InlineAllow, bp, 1))
+            AT_NOCOUNT("inline not allowed");
+          if (count_body_parts_check(&InlineExclude, bp, 0))
+            AT_NOCOUNT("excluded");
+        }
       }
     }
 
@@ -1787,7 +1857,7 @@ static int count_body_parts (BODY *body, int flags)
     if (shallrecurse)
     {
       dprint(5, (debugfile, "cbp: %p pre count = %d\n", (void *)bp, count));
-      bp->attach_count = count_body_parts(bp->parts, flags & ~MUTT_PARTS_TOPLEVEL);
+      bp->attach_count = count_body_parts(bp->parts, recurse_flags);
       count += bp->attach_count;
       dprint(5, (debugfile, "cbp: %p post count = %d\n", (void *)bp, count));
     }
@@ -1809,7 +1879,8 @@ int mutt_count_body_parts (CONTEXT *ctx, HEADER *hdr)
   else
     mutt_parse_mime_message (ctx, hdr);
 
-  if (AttachAllow || AttachExclude || InlineAllow || InlineExclude)
+  if (AttachAllow || AttachExclude || InlineAllow || InlineExclude ||
+      RootAllow || RootExclude)
     hdr->attach_total = count_body_parts(hdr->content, MUTT_PARTS_TOPLEVEL);
   else
     hdr->attach_total = 0;

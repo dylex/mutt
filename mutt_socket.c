@@ -129,6 +129,36 @@ int mutt_socket_write_d (CONNECTION *conn, const char *buf, int len, int dbg)
   return sent;
 }
 
+/* Checks if the CONNECTION input buffer has unread data.
+ *
+ * NOTE: for general use, the function needs to expand to poll nested
+ * connections.  It currently does not to make backporting a security
+ * fix easier.
+ *
+ * STARTTLS occurs before SASL and COMPRESS=DEFLATE processing, and
+ * mutt_tunnel() does not wrap the connection.  So this and the next
+ * function are safe for current usage in mutt_ssl_starttls().
+ */
+int mutt_socket_has_buffered_input (CONNECTION *conn)
+{
+  return conn->bufpos < conn->available;
+}
+
+/* Clears buffered input from a connection.
+ *
+ * NOTE: for general use, the function needs to expand to call nested
+ * connections.  It currently does not to make backporting a security
+ * fix easier.
+ *
+ * STARTTLS occurs before SASL and COMPRESS=DEFLATE processing, and
+ * mutt_tunnel() does not wrap the connection.  So this and the previous
+ * function are safe for current usage in mutt_ssl_starttls().
+ */
+void mutt_socket_clear_buffered_input (CONNECTION *conn)
+{
+  conn->bufpos = conn->available = 0;
+}
+
 /* poll whether reads would block.
  *   Returns: >0 if there is data to read,
  *            0 if a read would block,
@@ -432,14 +462,14 @@ int raw_socket_write (CONNECTION* conn, const char* buf, size_t count)
 int raw_socket_poll (CONNECTION* conn, time_t wait_secs)
 {
   fd_set rfds;
-  unsigned long wait_millis, post_t_millis;
+  unsigned long long wait_millis, post_t_millis;
   struct timeval tv, pre_t, post_t;
   int rv;
 
   if (conn->fd < 0)
     return -1;
 
-  wait_millis = wait_secs * 1000UL;
+  wait_millis = (unsigned long long)wait_secs * 1000ULL;
 
   FOREVER
   {
@@ -460,8 +490,10 @@ int raw_socket_poll (CONNECTION* conn, time_t wait_secs)
     if (SigInt)
       mutt_query_exit ();
 
-    wait_millis += (pre_t.tv_sec * 1000UL) + (pre_t.tv_usec / 1000);
-    post_t_millis = (post_t.tv_sec * 1000UL) + (post_t.tv_usec / 1000);
+    wait_millis += ((unsigned long long)pre_t.tv_sec * 1000ULL) +
+      (unsigned long long)(pre_t.tv_usec / 1000);
+    post_t_millis = ((unsigned long long)post_t.tv_sec * 1000ULL) +
+      (unsigned long long)(post_t.tv_usec / 1000);
     if (wait_millis <= post_t_millis)
       return 0;
     wait_millis -= post_t_millis;

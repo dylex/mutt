@@ -34,6 +34,9 @@
 #if defined(USE_SSL)
 # include "mutt_ssl.h"
 #endif
+#if defined(USE_ZLIB)
+# include "mutt_zstrm.h"
+#endif
 #include "buffy.h"
 #if USE_HCACHE
 #include "hcache.h"
@@ -424,7 +427,17 @@ IMAP_DATA* imap_conn_find (const ACCOUNT* account, int flags)
   if (new && idata->state == IMAP_AUTHENTICATED)
   {
     /* capabilities may have changed */
-    imap_exec (idata, "CAPABILITY", IMAP_CMD_QUEUE);
+    imap_exec (idata, "CAPABILITY", IMAP_CMD_FAIL_OK);
+
+#if defined(USE_ZLIB)
+    /* RFC 4978 */
+    if (mutt_bit_isset (idata->capabilities, COMPRESS_DEFLATE))
+    {
+      if (option (OPTIMAPDEFLATE) &&
+	  imap_exec (idata, "COMPRESS DEFLATE", IMAP_CMD_FAIL_OK) == 0)
+	mutt_zstrm_wrap_conn (idata->conn);
+    }
+#endif
 
     /* enable RFC6855, if the server supports that */
     if (mutt_bit_isset (idata->capabilities, ENABLE))
@@ -457,8 +470,6 @@ IMAP_DATA* imap_conn_find (const ACCOUNT* account, int flags)
 
 int imap_open_connection (IMAP_DATA* idata)
 {
-  char buf[LONG_STRING];
-
   if (mutt_socket_open (idata->conn) < 0)
     return -1;
 
@@ -519,6 +530,22 @@ int imap_open_connection (IMAP_DATA* idata)
   }
   else if (ascii_strncasecmp ("* PREAUTH", idata->buf, 9) == 0)
   {
+#if defined(USE_SSL)
+    /* An unencrypted PREAUTH response is most likely a MITM attack.
+     * Require a confirmation. */
+    if (!idata->conn->ssf)
+    {
+      if (option(OPTSSLFORCETLS) ||
+          (query_quadoption (OPT_SSLSTARTTLS,
+                             _("Abort unencrypted PREAUTH connection?")) != MUTT_NO))
+      {
+        mutt_error _("Encrypted connection unavailable");
+        mutt_sleep (1);
+        goto err_close_conn;
+      }
+    }
+#endif
+
     idata->state = IMAP_AUTHENTICATED;
     if (imap_check_capabilities (idata) != 0)
       goto bail;
@@ -526,7 +553,7 @@ int imap_open_connection (IMAP_DATA* idata)
   }
   else
   {
-    imap_error ("imap_open_connection()", buf);
+    imap_error ("imap_open_connection()", idata->buf);
     goto bail;
   }
 
@@ -654,7 +681,8 @@ static int imap_open_mailbox (CONTEXT* ctx)
   idata->newMailCount = 0;
   idata->max_msn = 0;
 
-  mutt_message (_("Selecting %s..."), idata->mailbox);
+  if (!ctx->quiet)
+    mutt_message (_("Selecting %s..."), idata->mailbox);
   imap_munge_mbox_name (idata, buf, sizeof(buf), idata->mailbox);
 
   /* pipeline ACL test */
@@ -838,6 +866,8 @@ static int imap_open_mailbox (CONTEXT* ctx)
     mutt_sleep (1);
     goto fail;
   }
+
+  imap_disallow_reopen (ctx);
 
   dprint (2, (debugfile, "imap_open_mailbox: msgcount is %d\n", ctx->msgcount));
   FREE (&mx.mbox);
@@ -1294,7 +1324,7 @@ int imap_sync_mailbox (CONTEXT* ctx, int expunge, int* index_hint)
   imap_allow_reopen (ctx);
 
   if ((rc = imap_check_mailbox (ctx, index_hint, 0)) != 0)
-    return rc;
+    goto out;
 
   /* if we are expunging anyway, we can do deleted messages very quickly... */
   if (expunge && mutt_bit_isset (ctx->rights, MUTT_ACL_DELETE))
@@ -1316,7 +1346,8 @@ int imap_sync_mailbox (CONTEXT* ctx, int expunge, int* index_hint)
       for (n = 0; n < ctx->msgcount; n++)
         if (ctx->hdrs[n]->deleted && ctx->hdrs[n]->changed)
           ctx->hdrs[n]->active = 0;
-      mutt_message (_("Marking %d messages deleted..."), quickdel_rc);
+      if (!ctx->quiet)
+        mutt_message (_("Marking %d messages deleted..."), quickdel_rc);
     }
   }
 
@@ -1372,8 +1403,9 @@ int imap_sync_mailbox (CONTEXT* ctx, int expunge, int* index_hint)
 #if USE_HCACHE
         imap_hcache_close (idata);
 #endif
-        mutt_message (_("Saving changed messages... [%d/%d]"), n+1,
-                      ctx->msgcount);
+        if (!ctx->quiet)
+          mutt_message (_("Saving changed messages... [%d/%d]"), n+1,
+                        ctx->msgcount);
 	if (!appendctx)
 	  appendctx = mx_open_mailbox (ctx->path, MUTT_APPEND | MUTT_QUIET, NULL);
 	if (!appendctx)
@@ -1485,7 +1517,8 @@ int imap_sync_mailbox (CONTEXT* ctx, int expunge, int* index_hint)
   if (expunge && !(ctx->closing) &&
       mutt_bit_isset(ctx->rights, MUTT_ACL_DELETE))
   {
-    mutt_message _("Expunging messages from server...");
+    if (!ctx->quiet)
+      mutt_message _("Expunging messages from server...");
     /* Set expunge bit so we don't get spurious reopened messages */
     idata->reopen |= IMAP_EXPUNGE_EXPECTED;
     if (imap_exec (idata, "EXPUNGE", 0) != 0)
@@ -1510,6 +1543,7 @@ int imap_sync_mailbox (CONTEXT* ctx, int expunge, int* index_hint)
   rc = 0;
 
 out:
+  imap_disallow_reopen (ctx);
   if (appendctx)
   {
     mx_fastclose_mailbox (appendctx);
@@ -1548,7 +1582,7 @@ int imap_close_mailbox (CONTEXT* ctx)
       idata->state = IMAP_AUTHENTICATED;
     }
 
-    idata->reopen &= IMAP_REOPEN_ALLOW;
+    idata->reopen = 0;
     FREE (&(idata->mailbox));
     mutt_free_list (&idata->flags);
     idata->ctx = NULL;
@@ -1718,6 +1752,9 @@ int imap_buffy_check (int force, int check_stats)
     }
 
     if (mailbox->magic != MUTT_IMAP)
+      continue;
+
+    if (mailbox->nopoll)
       continue;
 
     if (imap_get_mailbox (mutt_b2s (mailbox->pathbuf), &idata, name, sizeof (name)) < 0)
@@ -2074,9 +2111,8 @@ int imap_subscribe (char *path, int subscribe)
   IMAP_DATA *idata;
   char buf[LONG_STRING*2];
   char mbox[LONG_STRING];
-  char errstr[STRING];
   int mblen;
-  BUFFER err, token;
+  BUFFER err;
   IMAP_MBOX mx;
 
   if (!mx_is_imap (path) || imap_parse_path (path, &mx) || !mx.mbox)
@@ -2093,17 +2129,16 @@ int imap_subscribe (char *path, int subscribe)
 
   if (option (OPTIMAPCHECKSUBSCRIBED))
   {
-    mutt_buffer_init (&token);
     mutt_buffer_init (&err);
-    err.data = errstr;
-    err.dsize = sizeof (errstr);
+    err.dsize = STRING;
+    err.data = safe_malloc (err.dsize);
     mblen = snprintf (mbox, sizeof (mbox), "%smailboxes ",
                       subscribe ? "" : "un");
     imap_quote_string_and_backquotes (mbox + mblen, sizeof(mbox) - mblen,
                                       path);
-    if (mutt_parse_rc_line (mbox, &token, &err))
-      dprint (1, (debugfile, "Error adding subscribed mailbox: %s\n", errstr));
-    FREE (&token.data);
+    if (mutt_parse_rc_line (mbox, &err))
+      dprint (1, (debugfile, "Error adding subscribed mailbox: %s\n", err.data));
+    FREE (&err.data);
   }
 
   if (subscribe)
@@ -2357,7 +2392,7 @@ int imap_fast_trash (CONTEXT* ctx, char* dest)
       dprint (1, (debugfile, "could not queue copy\n"));
       goto out;
     }
-    else
+    else if (!ctx->quiet)
       mutt_message (_("Copying %d messages to %s..."), rc, mbox);
 
     /* let's get it on */
