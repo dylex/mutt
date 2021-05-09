@@ -210,13 +210,15 @@ static inline int is_shell_char(wchar_t ch)
 /* This function is for very basic input, currently used only by the
  * built-in editor.  It does not handle screen redrawing on resizes
  * well, because there is no active menu for the built-in editor.
- * Most callers should prefer mutt_get_field() instead.
+ *
+ * Most callers should prefer one of the public functions
+ * listed in the comment header for _mutt_enter_string().
  *
  * Returns:
  *	0 if input was given
  * 	-1 if abort.
  */
-int  mutt_enter_string(char *buf, size_t buflen, int col, int flags)
+int mutt_enter_string (char *buf, size_t buflen, int col, int flags)
 {
   int rv;
   ENTER_STATE *es = mutt_new_enter_state ();
@@ -237,7 +239,23 @@ int  mutt_enter_string(char *buf, size_t buflen, int col, int flags)
   return rv;
 }
 
-/*
+/* Generic Editor Menu.
+ *
+ * This function should not be called directly.  It must be wrapped by
+ * _get_field().  Instead call one of the public interfaces:
+ *
+ *   mutt_enter_filename()
+ *   mutt_enter_filenames()
+ *   mutt_enter_mailbox()
+ *
+ *   mutt_get_field() / mutt_buffer_get_field()
+ *   mutt_get_field_unbuffered() / mutt_get_password()
+ *
+ * If multiple is set, then the string (or selected files from the
+ * browser) will be returned via files and numfiles.
+ *
+ * Otherwise the string will be returned inside buf.
+ *
  * Returns:
  *      1 need to redraw the screen and call me again
  *	0 if input was given
@@ -278,7 +296,7 @@ int _mutt_enter_string (char *buf, size_t buflen, int col,
 
   if (flags & MUTT_FILE)
     hclass = HC_FILE;
-  else if (flags & MUTT_EFILE)
+  else if (flags & MUTT_MAILBOX)
     hclass = HC_MBOX;
   else if (flags & MUTT_CMD)
     hclass = HC_CMD;
@@ -541,7 +559,7 @@ int _mutt_enter_string (char *buf, size_t buflen, int col,
 	  break;
 
 	case OP_EDITOR_BUFFY_CYCLE:
-	  if (flags & MUTT_EFILE)
+	  if (flags & MUTT_INCOMING)
 	  {
 	    first = 1; /* clear input if user types a real key later */
 	    my_wcstombs (buf, buflen, state->wbuf, state->curpos);
@@ -549,7 +567,7 @@ int _mutt_enter_string (char *buf, size_t buflen, int col,
 	    state->curpos = state->lastchar = my_mbstowcs (&state->wbuf, &state->wbuflen, 0, buf);
 	    break;
 	  }
-	  else if (!(flags & MUTT_FILE))
+	  else if (!(flags & (MUTT_FILE | MUTT_MAILBOX)))
 	    goto self_insert;
           /* else fall through */
 
@@ -564,7 +582,8 @@ int _mutt_enter_string (char *buf, size_t buflen, int col,
 	    if (tempbuf && templen == state->lastchar - i &&
 		!memcmp (tempbuf, state->wbuf + i, (state->lastchar - i) * sizeof (wchar_t)))
 	    {
-	      mutt_select_file (buf, buflen, (flags & MUTT_EFILE) ? MUTT_SEL_FOLDER : 0);
+	      mutt_select_file (buf, buflen,
+                                (flags & MUTT_MAILBOX) ? MUTT_SEL_FOLDER : 0);
 	      if (*buf)
 		replace_part (state, i, buf);
 	      rv = 1;
@@ -619,7 +638,15 @@ int _mutt_enter_string (char *buf, size_t buflen, int col,
 	  }
           else if (flags & MUTT_PATTERN && ch == OP_EDITOR_COMPLETE)
           {
-            for (i = state->curpos; i && state->wbuf[i-1] != '~'; i--)
+            i = state->curpos;
+            if (i && state->wbuf[i - 1] == '~')
+            {
+              if (mutt_ask_pattern (buf, buflen))
+                replace_part (state, i - 1, buf);
+              rv = 1;
+              goto bye;
+            }
+            for (; i && state->wbuf[i - 1] != '~'; i--)
               ;
             if (i && i < state->curpos && state->wbuf[i-1] == '~' && state->wbuf[i] == 'y')
             {
@@ -666,7 +693,7 @@ int _mutt_enter_string (char *buf, size_t buflen, int col,
 	      BEEP ();
 	    replace_part (state, 0, buf);
 	  }
-	  else if (flags & (MUTT_FILE | MUTT_EFILE))
+	  else if (flags & (MUTT_FILE | MUTT_MAILBOX))
 	  {
 	    my_wcstombs (buf, buflen, state->wbuf, state->curpos);
 
@@ -676,9 +703,9 @@ int _mutt_enter_string (char *buf, size_t buflen, int col,
                  !memcmp (tempbuf, state->wbuf, state->lastchar * sizeof (wchar_t))))
 	    {
 	      _mutt_select_file (buf, buflen,
-				 ((flags & MUTT_EFILE) ? MUTT_SEL_FOLDER : 0) | (multiple ? MUTT_SEL_MULTI : 0),
+				 ((flags & MUTT_MAILBOX) ? MUTT_SEL_FOLDER : 0) | (multiple ? MUTT_SEL_MULTI : 0),
 				 files, numfiles);
-	      if (*buf)
+	      if (!multiple && *buf)
 	      {
 		mutt_pretty_mailbox (buf, buflen);
 		if (!pass)
@@ -686,6 +713,11 @@ int _mutt_enter_string (char *buf, size_t buflen, int col,
 		rv = 0;
 		goto bye;
 	      }
+              if (multiple && *numfiles > 0)
+              {
+		rv = 0;
+		goto bye;
+              }
 
 	      /* file selection cancelled */
 	      rv = 1;
@@ -793,14 +825,22 @@ self_insert:
 	if (!pass)
 	  mutt_history_add (hclass, buf, 1);
 
+        /* If multiple is set, the caller expects the result to be in
+         * tfiles[0], not buf.
+         */
 	if (multiple)
 	{
 	  char **tfiles;
+          BUFFER *path = NULL;
+
+          path = mutt_buffer_pool_get ();
 	  *numfiles = 1;
 	  tfiles = safe_calloc (*numfiles, sizeof (char *));
-	  mutt_expand_path (buf, buflen);
-	  tfiles[0] = safe_strdup (buf);
+          mutt_buffer_strcpy (path, buf);
+	  mutt_buffer_expand_path (path);
+	  tfiles[0] = safe_strdup (mutt_b2s (path));
 	  *files = tfiles;
+          mutt_buffer_pool_release (&path);
 	}
 	rv = 0;
 	goto bye;

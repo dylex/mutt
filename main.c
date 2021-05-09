@@ -82,7 +82,7 @@ To report a bug, please contact the Mutt maintainers via gitlab:\n\
     https://gitlab.com/muttmua/mutt/issues\n");
 
 static const char *Notice = N_("\
-Copyright (C) 1996-2020 Michael R. Elkins and others.\n\
+Copyright (C) 1996-2021 Michael R. Elkins and others.\n\
 Mutt comes with ABSOLUTELY NO WARRANTY; for details type `mutt -vv'.\n\
 Mutt is free software, and you are welcome to redistribute it\n\
 under certain conditions; type `mutt -vv' for details.\n");
@@ -96,7 +96,7 @@ Copyright (C) 1999-2017 Brendan Cully <brendan@kublai.com>\n\
 Copyright (C) 1999-2002 Tommi Komulainen <Tommi.Komulainen@iki.fi>\n\
 Copyright (C) 2000-2004 Edmund Grimley Evans <edmundo@rano.org>\n\
 Copyright (C) 2006-2009 Rocco Rutte <pdmef@gmx.net>\n\
-Copyright (C) 2014-2020 Kevin J. McCarthy <kevin@8t8.us>\n";
+Copyright (C) 2014-2021 Kevin J. McCarthy <kevin@8t8.us>\n";
 
 static const char *Thanks = N_("\
 Many others not mentioned here contributed code, fixes,\n\
@@ -589,10 +589,8 @@ static void start_curses (void)
     puts _("Error initializing terminal.");
     exit (1);
   }
-#if 1 /* USE_SLANG_CURSES  - commenting out suggested in #455. */
   /* slang requires the signal handlers to be set after initializing */
   mutt_signal_init ();
-#endif
   ci_start_color ();
   keypad (stdscr, TRUE);
   cbreak ();
@@ -1128,7 +1126,21 @@ int main (int argc, char **argv, char **environ)
         }
         context_hdr->content->length = st.st_size;
 
-        mutt_prepare_template (fin, NULL, msg, context_hdr, 0);
+        if (mutt_prepare_template (fin, NULL, msg, context_hdr, 0) < 0)
+        {
+          if (!option (OPTNOCURSES))
+          {
+            mutt_endwin (NULL);
+            set_option (OPTNOCURSES);
+          }
+          /* L10N:
+             Error when using -H command line argument, but reading the draft
+             file fails for some reason.
+          */
+          fputs (_("Cannot parse draft file\n"), stderr);
+          goto cleanup_and_exit;
+        }
+
 
         /* Scan for mutt header to set OPTRESUMEDRAFTFILES */
         for (last_uhp = &msg->env->userhdrs, uh = *last_uhp;
@@ -1246,7 +1258,7 @@ int main (int argc, char **argv, char **environ)
           mutt_env_to_intl (msg->env, NULL, NULL);
         }
 
-        mutt_write_rfc822_header (fout, msg->env, msg->content,
+        mutt_write_rfc822_header (fout, msg->env, msg->content, NULL,
                                   MUTT_WRITE_HEADER_POSTPONE, 0,
                                   option (OPTCRYPTPROTHDRSREAD) &&
                                   mutt_should_hide_protected_subject (msg));
@@ -1370,6 +1382,7 @@ cleanup_and_exit:
   mutt_browser_cleanup ();
   mutt_commands_cleanup ();
   crypt_cleanup ();
+  mutt_signal_cleanup ();
   mutt_free_opts ();
   mutt_free_windows ();
   mutt_buffer_pool_free ();

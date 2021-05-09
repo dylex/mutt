@@ -1,7 +1,5 @@
 /*
- * Copyright (C) 2005 Andreas Krennmair <ak@synflood.at>
- * Copyright (C) 2005 Peter J. Holzer <hjp@hjp.net>
- * Copyright (C) 2005,2007 Rocco Rutte <pdmef@gmx.net>
+ * Copyright (C) 2020 Remco Rĳnders <remco@webconquest.com>
  *
  *     This program is free software; you can redistribute it and/or modify
  *     it under the terms of the GNU General Public License as published by
@@ -16,23 +14,17 @@
  *     You should have received a copy of the GNU General Public License
  *     along with this program; if not, write to the Free Software
  *     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
- *
  */
 
-/* This file was originally part of mutt-ng */
+#ifndef MUTT_RANDOM_H
+#define MUTT_RANDOM_H
+typedef union random64
+{
+  char     char_array[8];
+  uint64_t int_64;
+} RANDOM64;
 
-#ifndef _MUTT_RFC3676_H
-#define _MUTT_RFC3676_H
-
-#include "mutt.h"
-
-/* body handler implementing RfC 3676 for format=flowed */
-int rfc3676_handler (BODY *a, STATE *s);
-
-int mutt_rfc3676_is_format_flowed (BODY *b);
-void mutt_rfc3676_space_stuff (HEADER *hdr);
-void mutt_rfc3676_space_unstuff (HEADER *hdr);
-void mutt_rfc3676_space_unstuff_attachment (BODY *b, const char *filename);
-void mutt_rfc3676_space_stuff_attachment (BODY *b, const char *filename);
-
-#endif /* !_MUTT_RFC3676_H */
+void mutt_base64_random96(char output_B64[static 17]);
+void mutt_random_bytes(char *random_bytes, int length_requested);
+void mutt_reseed(void);
+#endif

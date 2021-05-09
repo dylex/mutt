@@ -1663,10 +1663,14 @@ static int _maildir_commit_message (CONTEXT * ctx, MESSAGE * msg, HEADER * hdr)
       if (msg->received)
       {
 	struct utimbuf ut;
+        int utime_rc;
 
 	ut.actime = msg->received;
 	ut.modtime = msg->received;
-	if (utime (mutt_b2s (full), &ut))
+        do
+          utime_rc = utime (mutt_b2s (full), &ut);
+        while (utime_rc == -1 && errno == EINTR);
+	if (utime_rc == -1)
 	{
 	  mutt_perror (_("_maildir_commit_message(): unable to set time on file"));
 	  rc = -1;
@@ -1807,8 +1811,8 @@ static int mh_rewrite_message (CONTEXT * ctx, int msgno)
   BUFFER *newpath = NULL;
   BUFFER *partpath = NULL;
 
-  long old_body_offset = h->content->offset;
-  long old_body_length = h->content->length;
+  LOFF_T old_body_offset = h->content->offset;
+  LOFF_T old_body_length = h->content->length;
   long old_hdr_lines = h->lines;
 
   if ((dest = mx_open_new_message (ctx, h, 0)) == NULL)

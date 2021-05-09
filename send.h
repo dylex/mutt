@@ -35,6 +35,7 @@ typedef struct send_scope
   char *maildir;  /* $folder */
   char *outbox;
   char *postponed;
+  char *cur_folder;  /* '^' mailbox shortcut expansion */
   ADDRESS *env_from;
   ADDRESS *from;
   char *sendmail;
@@ -59,6 +60,7 @@ typedef struct send_ctx
   BUFFER *tempfile;
   time_t mtime;
   time_t tempfile_mtime;
+  char *date_header;
 
   /* Note: cur is set to NULL if the session is backgrounded. */
   HEADER *cur;
